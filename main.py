@@ -12,15 +12,34 @@ class circle:
         self.x = x
         self.y = y
         self.radius = radius
+        self.baseSize = radius
         self.color = color
         if surface is None:
-            surface = pygame.Surface((radius*2,radius*2))
-            pygame.draw.circle(surface,color, (radius,radius),radius)
+            surface = self.createSurface()
         self.surface = surface
+    def createSurface (self):
+        surface = pygame.Surface((self.radius*2,self.radius*2),pygame.SRCALPHA)
+        pygame.draw.circle(surface,self.color, (self.radius,self.radius),self.radius)
+        return surface
     def draw (self):
         screen.blit(self.surface, (self.x,self.y))
     def move(self):
-        self.x,self.y = pygame.mouse.get_pos() if pygame.mouse.get_pressed()[0] else None
+        if pygame.mouse.get_pressed()[0]:    
+            pos = pygame.mouse.get_pos()
+            self.x = pos[0] - self.radius
+            self.y = pos[1] - self.radius
+        elif pygame.mouse.get_pressed()[2]:
+            self.radius += 5
+            self.surface = self.createSurface()
+        elif pygame.mouse.get_pressed()[1]:
+            self.color = "blue"
+            self.surface = self.createSurface()
+        else:
+            self.color = "red"
+            if self.radius > self.baseSize:    
+                self.radius -= 5
+            self.surface = self.createSurface()
+        
 
 player = circle(100,100,50,"red")
 

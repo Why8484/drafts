@@ -1,70 +1,85 @@
 import tabulate
+import generator
 
-imtis = input("RASAI IMTI: ")
+def main ():
+    imtis = input("RASAI IMTI: ")
+    if imtis == "random":
+        imtis = str(generator.generate())
+        imtis = imtis.replace("]","")
+        imtis = imtis.replace("[","")
+        splitter = ", "
+        print(imtis)
 
-splitter = input("kas atskiria narius?('enter' kad butu ',') ")
-if splitter == "":
-    splitter = ","
-        
+    try:
+        splitter
+    except:    
+        splitter = input("kas atskiria narius?('enter' kad butu ',') ")
+        if splitter == "":
+            splitter = ","
+            
 
-array = imtis
-array = array.split(splitter)
-array = list(map(int, array))
+    array = imtis
+    array = array.split(splitter)
+    array = list(map(int, array))
 
-array.sort()
-order = str(array)
-order.replace("[","")
-order.replace("]","")
-print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-print(f"parasyta is eiles: {order}")
-print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-print(f"maziausias: {min(array)}")
-print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
-print(f"didziausias: {max(array)}")
-print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+    array.sort()
+    order = str(array)
+    order = order.replace("[","")
+    order = order.replace("]","")
+    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+    print(f"parasyta is eiles: {order}")
+    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+    print(f"maziausias: {min(array)}")
+    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
+    print(f"didziausias: {max(array)}")
+    print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
 
-elements = []
-class element:
-    def __init__(self, value, freq, cumulFreq):
-        self.value = value
-        self.freq = freq
-        self.cumulFreq = cumulFreq
-        elements.append(self)
+    elements = []
+    class element:
+        def __init__(self, value, freq, cumulFreq):
+            self.value = value
+            self.freq = freq
+            self.cumulFreq = cumulFreq
+            elements.append(self)
 
-length = len(array)
-
-
-summ = 0
-used = []
-for num in array:
-    if num in used:
-        continue
-    used.append(num)
-    freq = array.count(num)
-    element(num, freq, summ+freq)
-    summ += freq
-
+    length = len(array)
 
 
-data = [
-    ["DAZNIAI: "],
-    ["SUKAUPTIEJI DAZNIAI: "],
-    ["SANTYKINIAI DAZNIAI: "],
-    ["SANTIKINIAI SUKAUPTIEJI DAZNIAI: "],
-]
+    summ = 0
+    used = []
+    for num in array:
+        if num in used:
+            continue
+        used.append(num)
+        freq = array.count(num)
+        element(num, freq, summ+freq)
+        summ += freq
 
-headers = ["NARIAI: "]
 
-for e in elements:
-    e:element
-    headers.append(e.value)
-    data[0].append(e.freq)
-    data[1].append(e.cumulFreq)
-    data[2].append(f"{e.freq}/{length}")
-    data[3].append(f"{e.cumulFreq}/{length}")
 
-print(tabulate.tabulate(data, headers=headers, tablefmt="grid"))
+    data = [
+        ["DAZNIAI: "],
+        ["SUKAUPTIEJI DAZNIAI: "],
+        ["SANTYKINIAI DAZNIAI: "],
+        ["SANTIKINIAI SUKAUPTIEJI DAZNIAI: "],
+    ]
 
-input("'Enter' kad iseiti...")
+    headers = ["NARIAI: "]
+
+    for e in elements:
+        e:element
+        headers.append(e.value)
+        data[0].append(e.freq)
+        data[1].append(e.cumulFreq)
+        data[2].append(f"{e.freq}/{length}")
+        data[3].append(f"{e.cumulFreq}/{length}")
+
+    print(tabulate.tabulate(data, headers=headers, tablefmt="grid"))
+
+while True:
+    main()    
+    if input("iseiti? (taip/ne) ") == "taip":
+        break
+
 
     

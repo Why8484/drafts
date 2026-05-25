@@ -1,5 +1,6 @@
 import tabulate
 import generator
+import pipiriene
 
 def main ():
     imtis = input("RASAI IMTI: ")
@@ -9,6 +10,9 @@ def main ():
         imtis = imtis.replace("[","")
         splitter = ", "
         print(imtis)
+    elif imtis == "pipiriene":
+        print(pipiriene.pipiriene)
+        return
 
     try:
         splitter

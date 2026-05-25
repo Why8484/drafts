@@ -70,18 +70,6 @@ def main ():
             continue
         break
 
-import traceback
-
-try:
-    main()
-    pass
-
-except Exception:
-    with open("crash.txt", "w", encoding="utf-8") as f:
-        f.write(traceback.format_exc())
-    input("Crash occurred")
-
-
 
 
         

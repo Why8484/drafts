@@ -1,11 +1,14 @@
 import random
 
-def generate ():
-    possible = [1,2,3,4,5,6,7,8,9]
+def generate (low,high):
+    possible = list(range(low,high))
+    if not possible:
+        print("imtis yra tuscia")
+        return False
 
     count = ""
     while type(count) != int:    
-        count = int(input("SKOLKO? "))
+        count = int(input("KIEK? "))
 
     output = []
     for _ in range(count):

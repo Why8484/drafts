@@ -130,93 +130,21 @@ class symbol:
         self.y = y
         self.color = color
         self.intensity = intensity
-        self.dirty = False
         symbols.append(self)
 
-class shape:
-    def __init__(self,x,y,width,height,color):
-        self.x = x
-        self.y = y 
-        self.width = width
-        self.height = height
-        self.color = color
-        self.dirty = False
-        objects.append(self)
-    def draw():
-        pass
-
-
-class rectangle(shape):
-    def __init__(self, x, y, width, height, color,texture=False):
-        super().__init__(x, y, width, height, color)
-        self.texture = texture
-        if texture != False:
-            for x,y,col in texture:
-                symb = findSymbByCoords(x+self.x,y+self.y)
-                symb.color = COLORS.RGBtoANSI(col)
-                symb.dirty = True
-        self.draw()
-    def draw(self,clear=False):
-        if self.texture != False:
-            self.drawTexture()
-            return
-        for x in range(self.x,self.width+self.x,1):
-            for y in range(self.y,self.height+self.y,1):    
-                symb = findSymbByCoords(x,y)
-                symb.dirty = True
-                if clear:    
-                    symb.color = BG_COLOR
-                    return
-                symb.color = self.color
-    def drawTexture(self):
-        for x in range(self.x,self.width+self.x,1):
-            for y in range(self.y,self.height+self.y,1): 
-                symb = findSymbByCoords(x,y)
-                col = self.findInTexture(x,y)
-                symb.color = col
-                symb.dirty = True
-    def findInTexture(self,fx,fy):
-        if self.texture != False:
-            return self.texture[(HEIGHT-fy-1)*self.width]
-
-class player(rectangle):
-    def __init__(self, x, y, width, height, color,speed,texture=False):  
-        super().__init__(x, y, width, height, color,texture)
-        self.speed = speed
-    def move(self,axis,factor):
-        clearScreen()
-        if "x" in list(axis) and 0 <= self.x + self.speed*factor < WIDTH-self.width+1:
-            self.x += self.speed*factor
-            print("moved x")
-        if "y" in list(axis) and 0 <= self.y + self.speed*factor < HEIGHT-self.height+1:
-            self.y += self.speed*factor
-            print("moved y")
-        self.dirty = True
-            
 for y in range(HEIGHT):
     for x in range(WIDTH):
-        newSymb = symbol(COLORS.WHITE, 14, x,y)
-        newSymb.dirty = True
-
-# objects
-character = player(2,2,3,4,COLORS.GREEN,1)
-ground = rectangle(0,22,64,10,COLORS.RED,groundTextr)
+        newSymb = symbol(COLORS.WHITE, 15, x,y)
 
 def render():
-    os.system("cls")
+    os.system("cls") #clear screen
     STRINGS = STRINGS_START.copy()
     for symb in symbols:
-        if symb.dirty and symb.x < WIDTH:
+        if symb.x < WIDTH:
             symbStr = f"{symb.color}{findInChars(symb.intensity)}{COLORS.RESET}"
             STRINGS[symb.y] = STRINGS[symb.y] + symbStr
-    drawObjects()
     for string in STRINGS:
         print(string)
-
-def drawObjects():
-    for obj in objects:
-        if obj.dirty:    
-            obj.draw()
 
 previousColor = COLORS.WHITE
 
@@ -235,13 +163,11 @@ def lightenScreen():
     for s in symbols:
         if s.intensity < MAX_INTENSITY:    
             s.intensity += 1
-            s.dirty = True
 
 def darkenScreen():
     for s in symbols:
         if s.intensity > MIN_INTENSITY:    
             s.intensity -= 1
-            s.dirty = True
 
 def cycleThroughColor():
     global previousColor
@@ -252,25 +178,17 @@ def cycleThroughColor():
     color = COLORS.LIST[nextIndex]
     for s in symbols:
         s.color = color
-        s.dirty = True
         previousColor = s.color
-    drawObjects()
 
 def clearScreen():
     for s in symbols:
         s.color = BG_COLOR
-        s.dirty = True
-    drawObjects()
 
 
 CONTROLS = {
     "up": lightenScreen,
     "down": darkenScreen,
     "x": cycleThroughColor,
-    "w": lambda: character.move("y",-1),
-    "s": lambda: character.move("y",1),
-    "a": lambda: character.move("x",-1),
-    "d": lambda: character.move("x",1)
 }
 def control():
     for key in pressed.copy():       
@@ -282,4 +200,4 @@ keyboard.hook(lambda e: action(e))
 while True:
     control()
     render()
-    time.sleep(0.1)
+    time.sleep(0.01)

@@ -11,7 +11,7 @@ WIDTH = 64
 HEIGHT = 32
 MAX_INTENSITY = 68
 MIN_INTENSITY = 0
-GRAVITY = 1
+GRAVITY = 0.3
 updateFrame = True
 startGravity = False
 
@@ -235,7 +235,7 @@ class character(rectangle):
         self.speed = speed
         self.fall = 0
         self.isJumping = False
-        self.jumpForce = 5
+        self.jumpForce = 2
         self.jumpVelocity = 0
         self.grounded = False
         self.groundedObject = None
@@ -244,8 +244,11 @@ class character(rectangle):
             self.x += amt
         flickUpdateFrame()
     def applyGravity(self):
+        self.checkGrounded()
         if not self.grounded:    
             self.fall += GRAVITY
+        else:
+            self.fall = 0
         changeFrame = False
         collisionObject = checkListCollision(self,colliders)
         finalY = self.y + self.fall
@@ -277,7 +280,7 @@ class character(rectangle):
         if not self.isJumping:
             return
         self.y -= self.jumpVelocity
-        self.jumpVelocity -= 1
+        self.jumpVelocity -= 0.3
         if self.jumpVelocity <= 0: #on way down
             collisionObject = checkListCollision(self,colliders)
             if collisionObject is not None:
@@ -291,25 +294,27 @@ class character(rectangle):
             startGravity = True
         flickUpdateFrame()
     def checkGrounded(self):
-        if self.grounded == False:
-            self.groundedObject = None
-            return
-        
         # if grounded == true:
         self.y += 1
-        if checkCollision(self,self.groundedObject):
+        collisionObject = checkListCollision(self, colliders)
+        if collisionObject is None:
+            self.grounded = False
+            self.groundedObject = None
+            self.y -= 1
             return
-        # if grounded == false:(no collision if lower one point)
-        self.grounded = False
-        self.groundedObject = None
+        # if grounded == true:(tyhere is collision if lower one point)
+        self.grounded = True
+        self.groundedObject = collisionObject
         self.y -= 1
 
 
 
 
+
+
 ground = rectangle(0,22,64,10,texture(groundTextr))
-player = character(0,0,3,4,createTextr(3,4,(0,255,0)),1)
-test23 = rectangle(3,10,14,1,createTextr(14,1,(255,0,0)))
+player = character(0,0,2,2,createTextr(2,2,(255,0,0)),1)
+test23 = rectangle(3,10,14,1,createTextr(14,1,(255,255,0)))
 
 
 for y in range(HEIGHT):
@@ -331,6 +336,8 @@ def render():
 
 def drawObjects():
     for o in objects:
+        o.x = round(o.x)
+        o.y = round(o.y)
         o.draw()
 
 previousColor = COLORS.WHITE

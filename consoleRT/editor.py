@@ -16,7 +16,9 @@ pixels = list(img.getdata())
 pixelsNCoords = []
 
 for y in range(img.height):    
+    pixelsNCoords.append([])
     for x in range(img.width):
-        pixelsNCoords.append((x,y,pixels[y*img.width+x]))
+        pixelsNCoords[y].append(pixels[y*img.width+x])
+
 
 print(pixelsNCoords)

@@ -3,6 +3,7 @@ import time
 import keyboard
 from keyboard._keyboard_event import KEY_DOWN,KEY_UP
 from textures import *
+from math import ceil,floor
 
 symbols:list = []
 objects = []
@@ -123,6 +124,9 @@ def createTextr (width, height,colRGB):
             output[y].append(colRGB)
     return texture(output)
 
+def flickUpdateFrame ():
+    global updateFrame
+    updateFrame = True
 
 def findInChars(intensity):
     return CHARS[intensity]
@@ -130,6 +134,22 @@ def findInChars(intensity):
 def findSymbByCoords (fx,fy):
     return symbols[fy*WIDTH+fx]
 
+def measureDistance(x1,y1,x2,y2):
+    xDistance = abs(x1-x2)
+    yDistance = abs(y1-y2)
+    distance = (xDistance**2+yDistance**2)**(1/2)
+    return distance
+
+def measureDistanceBetweenObjects(obj1,obj2):
+    return measureDistance(obj1.x,obj1.y,obj2.x,obj2.y)
+
+def indexDict (dict,obj):
+    index = 0
+    for val in dict.values():
+        index += 1
+        if val == obj:
+            return index 
+    
 
 STRINGS = []
 for i in range(HEIGHT):
@@ -145,6 +165,10 @@ class symbol:
         self.color = color
         self.intensity = intensity
         symbols.append(self)
+
+for y in range(HEIGHT):
+    for x in range(WIDTH):
+        newSymb = symbol(COLORS.WHITE, 0, x,y)
 
 class texture:
     def __init__(self,texture:list):
@@ -307,19 +331,70 @@ class character(rectangle):
         self.groundedObject = collisionObject
         self.y -= 1
 
+class lightSource():
+    def __init__(self,x,y,lightRange,strength):
+        self.x = x
+        self.y = y
+        self.range = lightRange
+
+        self.strength = strength
+        self.appliers = []
+        self.appliersByStrength = {}
+        self.descendenceInterval = ceil(self.range/self.strength)
+        self.strengthDescendence = ceil(self.strength/self.range)
+        for index in range(self.range+1):
+            self.appliersByStrength[index*self.strengthDescendence] = []
+        self.apply()
+    def updateAppliers(self):
+        self.appliers = self.findAppliers()
+    def findAppliers(self):
+        potentialAppliers = []
+        appliers = []
+
+        for applierList in self.appliersByStrength.values():
+            applierList.clear()
+
+        # get all symbols in square with a side of range*2+someSafetyShit around the source
+        for y in range(self.y-self.range-1,self.y+self.range+2):    
+            for x in range(self.x-self.range-1,self.x+self.range+2):  
+                if not 0 <= x < WIDTH:
+                    continue
+                if not 0 <= y < HEIGHT:
+                    break
+                potentialAppliers.append(findSymbByCoords(x,y))
+        
+        # from the potential get all that are real appliers
+        for applier in potentialAppliers:
+            distance = measureDistanceBetweenObjects(applier,self)
+            if distance <= self.range:
+                interval = divmod(distance,self.descendenceInterval)[0]
+                self.appliersByStrength[int(((self.range+1)-interval-1)*self.strengthDescendence)].append(applier)                
+                appliers.append(applier)
+        return appliers
+    def apply(self):
+        for applier in self.appliers:
+            applier:symbol
+            applier.intensity = 0
+        self.updateAppliers()
+        for strength,applierList in self.appliersByStrength.items():
+            for appl in applierList:
+                appl: symbol
+                appl.intensity = strength
+        flickUpdateFrame()
+
+    def snapToPlayer(self):
+        player.updateSides()
+        self.x,self.y = player.center
+        self.apply()
+    
 
 
 
-
-
+mainLight = lightSource(15,15,19,15)
 ground = rectangle(0,22,64,10,texture(groundTextr))
 player = character(0,0,2,2,createTextr(2,2,(255,0,0)),1)
 test23 = rectangle(3,10,14,1,createTextr(14,1,(255,255,0)))
 
-
-for y in range(HEIGHT):
-    for x in range(WIDTH):
-        newSymb = symbol(COLORS.WHITE, 19, x,y)
 
 def render():
     os.system("cls")
@@ -327,6 +402,7 @@ def render():
     clearScreen()
     STRINGS = STRINGS_START.copy()
     drawObjects()
+    mainLight.snapToPlayer()
     for symb in symbols:
         if symb.x < WIDTH:
             symbStr = f"{symb.color}{findInChars(symb.intensity)}{COLORS.RESET}"
@@ -353,16 +429,6 @@ def action(event):
     elif event.event_type == KEY_UP:
         on_release(event)
 
-def lightenScreen():
-    for s in symbols:
-        if s.intensity < MAX_INTENSITY:    
-            s.intensity += 1
-
-def darkenScreen():
-    for s in symbols:
-        if s.intensity > MIN_INTENSITY:    
-            s.intensity -= 1
-
 def cycleThroughColor():
     global previousColor
 
@@ -382,14 +448,10 @@ def flickGravity():
     global startGravity
     startGravity = True
 
-def flickUpdateFrame ():
-    global updateFrame
-    updateFrame = True
+
 
 CONTROLS = {
-    "up": lambda: (lightenScreen(), pressed.discard("up"),flickUpdateFrame()),
-    "down": lambda: (darkenScreen(), pressed.discard("down"), flickUpdateFrame()),
-    "x": lambda: (cycleThroughColor(), pressed.discard("x"), flickUpdateFrame),
+    "x": lambda: (cycleThroughColor(), pressed.discard("x"), flickUpdateFrame()),
     "a": lambda: player.move(-player.speed),
     "d": lambda: player.move(player.speed),
     "g": flickGravity,

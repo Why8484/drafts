@@ -8,12 +8,18 @@ screen = pygame.display.set_mode((1280, 720))
 clock = pygame.time.Clock()
 running = True
 
-data = input("Enter data: ")
-formattedData = ast.literal_eval(data)
+filePath = input("file path: ")
 
-for Tuple in formattedData:
-    print(Tuple)
+with open(filePath, "r",encoding="utf-8") as f:
+    content = f.read().splitlines()
 
+realLists = []
+
+for line in content:
+    realLst = ast.literal_eval(line)
+    realLists.append(realLst)
+
+offsetX = offsetY = 100
 
 while running:
     # poll for events
@@ -25,10 +31,10 @@ while running:
     # fill the screen with a color to wipe away anything from last frame
     screen.fill("white")
 
+    for y,xs in enumerate(realLists):
+        for x,tx in enumerate(xs):
+            pygame.draw.rect(screen,tx,(x+offsetX,y+offsetY,1,1))
     # RENDER YOUR GAME HERE
-    for Tuple in formattedData:
-        x,y,color = Tuple
-        pygame.draw.rect(screen,color,(x+100,y+100,1,1))
     # flip() the display to put your work on screen
     pygame.display.flip()
 

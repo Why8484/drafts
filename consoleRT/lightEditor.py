@@ -9,16 +9,12 @@ from collections import OrderedDict
 symbols:list = []
 objects = []
 colliders = []
-items = []
-WIDTH = 96
-HEIGHT = 48   
-BLOCK_SIZE = 6
-WIDTH_BLOCK = 16
-HEIGHT_BLOCK = 8
+WIDTH = 64
+HEIGHT = 32        
 MIN_INTENSITY = 0
 GRAVITY = 0.3
 updateFrame = True
-startGravity = True
+startGravity = False
 
 class COLORS:
     BLACK   = "\033[30m"
@@ -158,7 +154,7 @@ class shape:
             for x in range(self.width):
                 symb = findSymbByCoords(self.x+x,self.y+y)
                 symb.color = self.texture.findInTexture(x,y)
-
+        
 def isBetween(val, min,max):
     if min < val < max:
         return True
@@ -203,8 +199,7 @@ def checkCollision(collider1:shape,collider2:shape):
 
 def checkListCollision(col1,lst):
     lstCopy = lst.copy()
-    if col1 in lstCopy:
-        lstCopy.remove(col1)
+    lstCopy.remove(col1)
     for element in lstCopy:  
         if checkCollision(col1,element):
             return element
@@ -225,13 +220,9 @@ class character(rectangle):
         self.jumpVelocity = 0
         self.grounded = False
         self.groundedObject = None
-        self.light = startLight
     def move(self,amt):
-        self.checkForItems()
         if 0 <= self.x + amt <= WIDTH-self.width:
             self.x += amt
-        if checkListCollision(self,colliders) is not None:
-            self.x -= amt
         flickUpdateFrame()
     def applyGravity(self):
         self.checkGrounded()
@@ -239,8 +230,6 @@ class character(rectangle):
             self.fall += GRAVITY
         else:
             self.fall = 0
-            return
-        self.checkForItems()
         changeFrame = False
         collisionObject = checkListCollision(self,colliders)
         finalY = self.y + self.fall
@@ -269,10 +258,8 @@ class character(rectangle):
     def applyJump(self):
         global startGravity,colliders
 
-
         if not self.isJumping:
             return
-        self.checkForItems()
         self.y -= self.jumpVelocity
         self.jumpVelocity -= 0.3
         if self.jumpVelocity <= 0: #on way down
@@ -300,18 +287,9 @@ class character(rectangle):
         self.grounded = True
         self.groundedObject = collisionObject
         self.y -= 1 
-    def checkForItems(self):
-        collisionObject = checkListCollision(self,items)
-        if collisionObject is None:
-            return
-        collisionObject:item
-        collisionObject.onCollection()
-    def aquireLight(self,light):
-        self.light = light
-
 
 class lightSource():
-    def __init__(self,x,y,lightRange,descends,maxLuminosity,showOnStart = False):
+    def __init__(self,x,y,lightRange,descends,maxLuminosity):
         self.x = x
         self.y = y
         self.range = lightRange
@@ -326,8 +304,7 @@ class lightSource():
         for desc in range(1,descends+1):
             self.rings[(previousPoint-ringWidth,previousPoint)] = desc*lumen
             previousPoint -= ringWidth
-        if showOnStart:    
-            self.apply()
+        self.apply()
     def updateAppliers(self):
         self.appliers = self.findAppliers()
     def findAppliers(self):
@@ -382,32 +359,52 @@ class lightSource():
             if ringLumen < 0:
                 ringLumen = 0
             self.rings[(previousPoint,previousPoint+ringWidth)] = ringLumen
-            previousPoint += ringWidth    
+            previousPoint += ringWidth
 
-class item(shape):
-    def __init__(self, x, y, width, height, texture):
-        super().__init__(x, y, width, height, texture)
-        items.append(self)
-    def onCollection(self):
-        objects.remove(self)
-        items.remove(self)
+    def decreaseRange(self):
+        if self.range - 1 < 0:
+            return
+        self.range -= 1
+        self.apply()
+        self.updateRings()
+    def increaseRange(self):
+        self.range += 1
+        self.apply()
+        self.updateRings()
+    def increaseDescends(self):
+        if self.descends + 1 > MAX_INTENSITY:
+            return
+        self.descends += 1
+        self.apply()
+        self.updateRings()
+    def decreaseDescends(self):
+        if self.descends - 1 <= 0:
+            return
+        self.descends -= 1
+        self.apply()
+        self.updateRings()
+    def increaseMaxLumen(self):
+        if self.maxLuminosity + 1 > MAX_INTENSITY:
+            return
+        self.maxLuminosity += 1
+        self.apply()
+        self.updateRings()
+    def decreaseMaxLumen(self):
+        if self.maxLuminosity - 1 < 0:
+            return
+        self.maxLuminosity -= 1
+        self.apply()
+        self.updateRings()
 
-class lightItem(item):
-    def __init__(self, x, y, width, height, texture,light):
-        super().__init__(x, y, width, height, texture)
-        self.light = light
-    def onCollection(self):
-        player.aquireLight(self.light)
-        super().onCollection()
     
 
-flashLight = lightSource(0,0,18,3,9)
-startLight = lightSource(0,0,5,1,14, True)
+
+
+mainLight = lightSource(0,0,10,3,MAX_INTENSITY)
 ground = rectangle(0,22,64,10,texture(groundTextr))
 player = character(0,0,2,2,createTextr(2,2,(255,0,0)),1)
 test23 = rectangle(3,18,14,1,createTextr(14,1,(255,255,0)))
 test1945 = rectangle(18,16,15,1,createTextr(15,1,(0,255,255)))
-flashItem = lightItem(44,20,2,2,createTextr(2,2,(0,0,0)),flashLight)
 
 
 def render():
@@ -416,8 +413,7 @@ def render():
     clearScreen()
     STRINGS = STRINGS_START.copy()
     drawObjects()
-    player.light.snapToPlayer()
-    player.draw() # draw it last
+    mainLight.snapToPlayer()
     for symb in symbols:
         if symb.x < WIDTH:
             symbStr = f"{symb.color}{findInChars(symb.intensity)}{COLORS.RESET}"
@@ -431,6 +427,8 @@ def drawObjects():
         o.y = round(o.y)
         o.draw()
 
+previousColor = COLORS.WHITE
+
 # pressed keys. USEd for controls+
 pressed =  set()
 on_press = lambda k: pressed.add(k.name)
@@ -441,6 +439,17 @@ def action(event):
         on_press(event)
     elif event.event_type == KEY_UP:
         on_release(event)
+
+def cycleThroughColor():
+    global previousColor
+
+    nextIndex = COLORS.LIST.index(previousColor)+1
+    if nextIndex > len(COLORS.LIST)-1:
+        nextIndex = 0
+    color = COLORS.LIST[nextIndex]
+    for s in symbols:
+        s.color = color
+        previousColor = s.color
 
 def clearScreen():
     for s in symbols:
@@ -453,10 +462,18 @@ def flickGravity():
 
 
 CONTROLS = {
+    "x": lambda: (cycleThroughColor(), pressed.discard("x"), flickUpdateFrame()),
     "a": lambda: player.move(-player.speed),
     "d": lambda: player.move(player.speed),
+    "g": flickGravity,
     "h": flickUpdateFrame,
     "space": player.startJump,
+    "up": mainLight.increaseRange,
+    "down": mainLight.decreaseRange,
+    "left": mainLight.decreaseDescends,
+    "right": mainLight.increaseDescends,
+    "page up": mainLight.increaseMaxLumen,
+    "page down": mainLight.decreaseMaxLumen,
 }
 def control():
     for key in pressed.copy():

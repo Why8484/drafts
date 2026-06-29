@@ -401,7 +401,7 @@ class lightSource():
 
 
 mainLight = lightSource(0,0,10,3,MAX_INTENSITY)
-ground = rectangle(0,22,64,10,texture(groundTextr))
+ground = rectangle(0,22,64,10,createTextr(64,10,(160,3,27)))
 player = character(0,0,2,2,createTextr(2,2,(255,0,0)),1)
 test23 = rectangle(3,18,14,1,createTextr(14,1,(255,255,0)))
 test1945 = rectangle(18,16,15,1,createTextr(15,1,(0,255,255)))

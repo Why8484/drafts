@@ -1,7 +1,7 @@
-ch = input("vbdshj: ")
+string = """$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/|()1{}[]?-_+~<>i!lI;:,"^`'. """
+lst = list(string)
+lst.reverse()
 
-splich = ch.split(" ")
-dic = {}
+for i, e in enumerate(lst):
+    print(f'{i}: "{e}",')
 
-for i,e in enumerate(splich):
-    print(f'{i+1}: "{e}",')

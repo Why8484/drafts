@@ -3,22 +3,63 @@ import time
 import keyboard
 from keyboard._keyboard_event import KEY_DOWN,KEY_UP
 from textures import *
-from math import ceil,floor
-from collections import OrderedDict
+from math import ceil
+from startLayout import mainLayout
+from pynput.mouse import Controller,Listener
+import pygetwindow
+import sys
+
+def hideCursor():
+    sys.stdout.write("\033[?25l")
+    sys.stdout.flush()
+
+def showCursor():
+    sys.stdout.write("\033[?25h")
+    sys.stdout.flush()
+
 
 symbols:list = []
 objects = []
 colliders = []
 items = []
+blocks = []
 WIDTH = 96
 HEIGHT = 48   
 BLOCK_SIZE = 6
-WIDTH_BLOCK = 16
-HEIGHT_BLOCK = 8
+GRID_WIDTH = 16
+GRID_HEIGHT= 8
 MIN_INTENSITY = 0
 GRAVITY = 0.3
 updateFrame = True
 startGravity = True
+
+class window:
+    @classmethod
+    def updateSpecs(cls):
+        cls.win = pygetwindow.getActiveWindow()
+        cls.size = os.get_terminal_size()
+        cls.collumns,cls.rows = cls.size
+        cls.x = cls.win.left
+        cls.y = cls.win.top
+        cls.width = cls.win.width
+        cls.height = cls.win.height
+        cls.fontWidth = cls.width/cls.collumns
+        cls.fontHeight = cls.height/cls.rows
+    @classmethod
+    def pxToChars(cls,xpx,ypx):
+        window.updateSpecs()
+        if not (isBetween(xpx,cls.x,cls.x+cls.width) and isBetween(ypx,cls.y,cls.y+cls.height)):
+            return 0,0
+        inWindowX = xpx - cls.x
+        inWindowY = ypx - cls.y
+        charX = inWindowX // cls.fontWidth
+        charY = inWindowY // cls.fontHeight
+        return charX,charY
+        
+
+
+time.sleep(0.5)
+window.updateSpecs()
 
 class COLORS:
     BLACK   = "\033[30m"
@@ -47,6 +88,90 @@ class COLORS:
         r,g,b = rgb
         ansi = f"\033[38;2;{r};{g};{b}m"
         return ansi
+
+class MOUSE:
+    mousex = 0
+    mousey = 0
+    prevMousex = 0
+    prevMousey = 0
+    cursorImage = None
+    buttonsClicked  = {
+        "left": False,
+        "right": False,
+        "middle": False
+    }
+
+    @classmethod
+    def onClick(cls,button,pressed):
+        if button.name in cls.buttonsClicked:
+            cls.buttonsClicked[button.name] =  pressed
+    
+    @classmethod
+    def onMove(cls,x,y): 
+        cls.mousex, cls.mousey = x,y
+        MOUSE.cursorSnap()
+    
+    @classmethod
+    def cursorSnap(cls):
+        hover = window.pxToChars(cls.mousex,cls.mousey)
+        if hover is None:
+            cursor.x,cursor.y = 0,0
+            return
+        cursor.x,cursor.y = hover[0],hover[1]
+        if cursor.x+cursor.width > WIDTH:
+            cursor.x = WIDTH-cursor.width
+        elif cursor.x < 0:
+            cursor.x = 0
+        if cursor.y + cursor.height > HEIGHT:
+            cursor.y = HEIGHT-cursor.height
+        elif cursor.y < 0:
+            cursor.y = 0
+
+    @classmethod
+    def onLeftClick(cls):
+        if cls.buttonsClicked["left"]:
+            if not player.isMining:
+                hoverBlock = block.findFromCoords((cursor.x,cursor.y))
+                player.isMining = True
+                player.blockMining = hoverBlock
+                if player.blockMining is  None:
+                    player.isMining = False
+                if player.blockMining is not None:
+                    pass
+                player.timeMining = 0
+                return
+            player.mine()
+        else:
+            if player.isMining:
+                player.isMining = False
+                player.blockMining = None
+                player.timeMining = 0
+
+
+# PYNPUT SPECIAL MOUSE:
+
+# # turn off quick edit mode on windows
+def win32_event_filter(msg, data):
+    if msg == 516:
+        MOUSE.buttonsClicked["right"] = True
+        return False 
+    elif msg == 517:
+        MOUSE.buttonsClicked["right"] = False
+        return False
+    
+    return True
+
+mouseController = Controller()
+
+def onClick(x,y,button,pressed):
+    MOUSE.onClick(button,pressed)
+
+def onMove(x,y):
+    MOUSE.onMove(x,y)
+mouseListener = Listener(on_move=onMove,on_click=onClick,win32_event_filter=win32_event_filter)
+mouseListener.start()
+
+
 
 CHARS = {
 0: " ",
@@ -104,7 +229,26 @@ def indexDict (dict,obj):
         index += 1
         if val == obj:
             return index 
-    
+        
+
+
+def loadLayout(layout):
+    global namesNClasses
+
+    lx = 0
+    ly = 0
+    for name in layout:
+        lx += 1
+        if lx == 16:
+            ly += 1
+            lx = 0
+        if name is None:
+            continue
+        if not ly == 8:      
+            cls = namesNClasses[name]
+            cls(lx,ly)
+
+
 
 STRINGS = []
 for i in range(HEIGHT):
@@ -132,6 +276,8 @@ class texture:
         self.height = len(texture)
         self.texture = texture
     def findInTexture(self,x,y):
+        if self.texture[y][x] == (-12,-12,-12):
+            return BG_COLOR
         return COLORS.RGBtoANSI(self.texture[y][x])
 
 class shape:
@@ -158,6 +304,7 @@ class shape:
             for x in range(self.width):
                 symb = findSymbByCoords(self.x+x,self.y+y)
                 symb.color = self.texture.findInTexture(x,y)
+
 
 def isBetween(val, min,max):
     if min < val < max:
@@ -191,15 +338,31 @@ def checkCollision(collider1:shape,collider2:shape):
     overlapsVerticallyTop = isBetween(collider2.top,collider1.top,collider1.bottom) or isBetween(collider1.top, collider2.top,collider2.bottom)
 
     # general horizontal
-    overlapsHorizontally = overlapsHorizontallyLeft or overlapsHorizontallyRight
+    overlapsHorizontally = overlapsHorizontallyLeft or overlapsHorizontallyRight or (collider1.left == collider2.left and collider2.right == collider1.right)
 
     # general vertical
-    overlapsVertically = overlapsVerticallyTop or overlapsVerticallyBottom
+    overlapsVertically = overlapsVerticallyTop or overlapsVerticallyBottom or (collider1.top == collider2.top and collider1.bottom == collider2.bottom)
 
     # general
     overlaps = overlapsVertically and overlapsHorizontally
 
     return overlaps
+
+def checkPointCollision(collider:shape,pos:tuple):
+    cx,cy = pos
+    
+    overlaps = False
+    overlapsVertically = False
+    overlapsHorizontally = False
+
+    overlapsHorizontally = isBetween(cx,collider.left,collider.right) or cx == collider.left or cx == collider.right
+    overlapsVertically = isBetween(cy, collider.top,collider.bottom) or cy == collider.top or cy == collider.bottom
+
+    if overlapsHorizontally and overlapsVertically:
+        overlaps = True
+    
+    return overlaps
+
 
 def checkListCollision(col1,lst):
     lstCopy = lst.copy()
@@ -225,7 +388,10 @@ class character(rectangle):
         self.jumpVelocity = 0
         self.grounded = False
         self.groundedObject = None
-        self.light = startLight
+        self.light = bestLight
+        self.isMining = False
+        self.blockMining = None
+        self.timeMining = 0
     def move(self,amt):
         self.checkForItems()
         if 0 <= self.x + amt <= WIDTH-self.width:
@@ -269,20 +435,22 @@ class character(rectangle):
     def applyJump(self):
         global startGravity,colliders
 
-
         if not self.isJumping:
             return
         self.checkForItems()
         self.y -= self.jumpVelocity
         self.jumpVelocity -= 0.3
-        if self.jumpVelocity <= 0: #on way down
-            collisionObject = checkListCollision(self,colliders)
-            if collisionObject is not None:
+        collisionObject = checkListCollision(self,colliders)
+        if collisionObject is not None:
+            if self.jumpVelocity <= 0:
                 self.y = collisionObject.y-self.height
                 self.grounded = True
                 self.groundedObject = collisionObject
                 self.isJumping = False
                 startGravity = True
+            else:
+                self.y = collisionObject.y+collisionObject.height
+                self.jumpVelocity = 0
         if self.jumpVelocity == -self.jumpForce-1:
             self.isJumping = False
             startGravity = True
@@ -308,7 +476,11 @@ class character(rectangle):
         collisionObject.onCollection()
     def aquireLight(self,light):
         self.light = light
-
+    def mine(self):
+        self.timeMining += deltaTime
+        self.blockMining:block
+        if self.blockMining.mineTime < self.timeMining:
+            self.blockMining.mined()
 
 class lightSource():
     def __init__(self,x,y,lightRange,descends,maxLuminosity,showOnStart = False):
@@ -399,16 +571,91 @@ class lightItem(item):
     def onCollection(self):
         player.aquireLight(self.light)
         super().onCollection()
+
+class block(shape):
+    def __init__(self, gridX, gridY, texture,name:str,mineTime):
+        self.name:str = name
+        self.gridx = gridX
+        self.gridy = gridY
+        self.mineTime = mineTime
+        self.wasMined = False
+        x,y = self.getCoordsFromGridCoords()
+        colliders.append(self)
+        blocks.append(self)
+        super().__init__(x, y, BLOCK_SIZE, BLOCK_SIZE, texture)
+    def getCoordsFromGridCoords(self):
+        return self.gridx * BLOCK_SIZE, self.gridy * BLOCK_SIZE
+    @classmethod
+    def findFromCoords(cls,pos):
+        for bl in blocks:
+            if checkPointCollision(bl,pos):
+                return bl
+        
+    def mined(self):
+        if self.wasMined:
+            return
+        try:
+            objects.remove(self)
+            blocks.remove(self)
+            colliders.remove(self)
+            print(f"yoo greetings from{self.name}")
+            self.wasMined = True
+            flickUpdateFrame()
+        except Exception as e:
+            print(e)
+
+class dirt(block):
+    def __init__(self, gridx, gridy):
+        super().__init__(gridx, gridy, dirtTexture, "dirt",0.4)
+
+class grass(block):
+    def __init__(self, gridX, gridY):
+        super().__init__(gridX, gridY, grassTexure, "grass", 1)
+
+class wood(block):
+    def __init__(self, gridX, gridY):
+        super().__init__(gridX, gridY, woodTexture,"wood",2)
+
+class leaves(block):
+    def __init__(self, gridX, gridY):
+        super().__init__(gridX, gridY, leavesTexture, "leaves", 0.1)
     
 
+# load textures
+def loadTextures():
+    global dirtTexture,grassTexure,woodTexture,leavesTexture,characterTexture,cursorTexture
+
+    dirtTexture = texture(dirtT)
+    grassTexure = texture(grassT)
+    woodTexture = texture(woodT)
+    leavesTexture = texture(leavesT)
+    characterTexture = texture(characterT)
+    cursorTexture = texture(cursorT)
+
+loadTextures()
+namesNClasses = {
+    "dirt": dirt,
+    "grass": grass,
+    "wood": wood,
+    "leaves": leaves
+}
+loadLayout(mainLayout)
+
+
+# OBJECTS:
+
+# light objects
 flashLight = lightSource(0,0,18,3,9)
 startLight = lightSource(0,0,5,1,14, True)
-ground = rectangle(0,22,64,10,texture(groundTextr))
-player = character(0,0,2,2,createTextr(2,2,(255,0,0)),1)
-test23 = rectangle(3,18,14,1,createTextr(14,1,(255,255,0)))
-test1945 = rectangle(18,16,15,1,createTextr(15,1,(0,255,255)))
-flashItem = lightItem(44,20,2,2,createTextr(2,2,(0,0,0)),flashLight)
+bestLight = lightSource(0,0,48,1,MAX_INTENSITY)
 
+# player object
+player = character(0,0,6,10,characterTexture,1)
+
+# block types:
+cursor = shape(0,0,4,4,cursorTexture)
+objects.remove(cursor)
+# ground = rectangle(0,HEIGHT-10,WIDTH,10,createTextr(WIDTH,10,(100,10,80)))
 
 def render():
     os.system("cls")
@@ -418,6 +665,7 @@ def render():
     drawObjects()
     player.light.snapToPlayer()
     player.draw() # draw it last
+    # cursor.draw()
     for symb in symbols:
         if symb.x < WIDTH:
             symbStr = f"{symb.color}{findInChars(symb.intensity)}{COLORS.RESET}"
@@ -427,8 +675,13 @@ def render():
 
 def drawObjects():
     for o in objects:
-        o.x = round(o.x)
-        o.y = round(o.y)
+        try:
+            o.x = round(o.x)
+            o.y = round(o.y)
+        except Exception as e:
+            print(o,e)
+            input()
+            continue
         o.draw()
 
 # pressed keys. USEd for controls+
@@ -451,21 +704,32 @@ def flickGravity():
     startGravity = True
 
 
-
 CONTROLS = {
     "a": lambda: player.move(-player.speed),
     "d": lambda: player.move(player.speed),
     "h": flickUpdateFrame,
     "space": player.startJump,
 }
+
+MOUSE_CONTROLS = {
+    "left": MOUSE.onLeftClick
+}
 def control():
     for key in pressed.copy():
         if key in CONTROLS.keys():        
             CONTROLS[key]() 
+    
+    for button,pressedM in MOUSE.buttonsClicked.items():
+        if button in MOUSE_CONTROLS.keys():    
+            MOUSE_CONTROLS[button]()
 
 keyboard.hook(lambda e: action(e))
 
+
+deltaTime = 0.017
 while True:
+    hideCursor()
+    startTime = time.time()
     control()
     player.applyJump()
     if startGravity:    
@@ -475,3 +739,5 @@ while True:
         updateFrame = False
 
     time.sleep(0.017)
+    endTime = time.time()
+    deltaTime = endTime - startTime

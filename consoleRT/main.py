@@ -7,16 +7,6 @@ from math import ceil
 from startLayout import mainLayout
 from pynput.mouse import Controller,Listener
 import pygetwindow
-import sys
-
-def hideCursor():
-    sys.stdout.write("\033[?25l")
-    sys.stdout.flush()
-
-def showCursor():
-    sys.stdout.write("\033[?25h")
-    sys.stdout.flush()
-
 
 symbols:list = []
 objects = []
@@ -197,6 +187,11 @@ CHARS = {
 }
 MAX_INTENSITY = len(CHARS)-1
 
+
+
+
+
+
 def createTextr (width, height,colRGB):
     output = []
     for y in range(height):
@@ -210,6 +205,8 @@ def flickUpdateFrame ():
     updateFrame = True
 
 def findInChars(intensity):
+    if type(intensity) == str:
+        return intensity
     return CHARS  [intensity]
 
 def findSymbByCoords (fx,fy):
@@ -328,6 +325,19 @@ class shape:
     def fromTexture(cls,x,y,textr:texture):
         return cls(x,y,textr.getWidth(),textr.getHeight(),textr)
 
+def loadTextures():
+    global dirtTexture,grassTexure,woodTexture,leavesTexture,characterTexture,cursorTexture,interfaceBGTexture,itemFrameTexture
+
+    dirtTexture = texture(dirtT)
+    grassTexure = texture(grassT)
+    woodTexture = texture(woodT)
+    leavesTexture = texture(leavesT)
+    characterTexture = texture(characterT)
+    cursorTexture = texture(cursorT)
+    interfaceBGTexture = texture(interfaceBGT)
+    itemFrameTexture = texture(itemFrameT)
+
+loadTextures()
 
 def isBetween(val, min,max):
     if min < val < max:
@@ -396,10 +406,95 @@ def checkListCollision(col1,lst):
             return element
     return None
 
+
+    
+
+class inventory:
+    itemFrames = []
+    interfaceBG = shape.fromTexture(96,0,interfaceBGTexture)
+    FRAME_ROWS = 5
+    FRAME_COLLUMNS = 4
+    FRAME_INDENT_X = 1
+    FRAME_INDENT_Y = 1
+    FRAME_WIDTH = 17
+    FRAME_HEIGHT = 10
+
+    @classmethod
+    def createFrames(cls):
+        for y in range(cls.FRAME_COLLUMNS):
+            for x in range(cls.FRAME_ROWS):
+                itemF = itemFrame.fromTexture(100+(cls.FRAME_WIDTH+cls.FRAME_INDENT_X)*x,3+(cls.FRAME_HEIGHT+cls.FRAME_INDENT_Y)*y,itemFrameTexture)
+                cls.itemFrames.append(itemF)
+    
+    @classmethod
+    def getNextEmptyFrame(cls):
+        for iFrame in cls.itemFrames:
+            if iFrame.item is None:
+                return iFrame
+    
+    @classmethod
+    def getFrameByItem(cls,item):
+        for iFrame in cls.itemFrames:
+            if iFrame.item == item:
+                return iFrame
+    
+    @classmethod
+    def add(cls,item,count):
+        for frame in cls.itemFrames:
+            if frame.item is not None and frame.item.name == item.name and frame.count + count <= itemFrame.ITEM_LIMIT:
+                nextEmptyFrame = frame
+        try:
+            nextEmptyFrame
+        except:    
+            nextEmptyFrame:itemFrame = cls.getNextEmptyFrame()
+        nextEmptyFrame.item = item
+        nextEmptyFrame.count += count
+        item.x = nextEmptyFrame.itemX
+        item.y = nextEmptyFrame.itemY
+        nextEmptyFrame.displayCount()
+    
+    @classmethod
+    def remove(cls,frame):
+        frame.item = None
+        frame.count = 0
+
+class itemFrame(shape):
+    ITEM_LIMIT = 20
+    def __init__(self, x, y, width, height, texture):
+        super().__init__(x, y, width, height, texture)
+        self.item = None
+        self.count = 0
+        self.gridx = (x-100)/(inventory.FRAME_WIDTH+inventory.FRAME_INDENT_X)
+        self.gridy = (y-3)/(inventory.FRAME_HEIGHT-inventory.FRAME_INDENT_Y)
+        self.itemX = self.x+2
+        self.itemY = self.y+2
+        self.countX = self.itemX+BLOCK_SIZE+1
+        self.countY = self.itemY
+        self.countXEnd = self.countX+BLOCK_SIZE
+        self.countYEnd = self.countY+BLOCK_SIZE
+        self.countSymbs = []
+        for y in range(self.countY,self.countYEnd):
+            for x in range(self.countX,self.countXEnd):
+                findSymbByCoords(x,y).intensity = " "
+    
+    def writeInCount(self,text:str,fx:int,fy:int) -> None:
+        textSplit = list(text)
+        for index,letter in enumerate(textSplit):
+            findSymbByCoords(self.countX+fx+index,self.countY+fy).intensity = letter
+
+    def displayCount(self):
+        stringHowMuch = f"x {self.count}"
+        stringWhat = f"{self.item.name}"
+        self.writeInCount(stringHowMuch,1,1)
+        self.writeInCount(stringWhat,0,3)
+
+inventory.createFrames()
+
 class rectangle(shape):
     def __init__(self,x,y,width,height,texture):
         super().__init__(x,y,width,height,texture)
         colliders.append(self)
+
 
 class character(rectangle):
     def __init__(self, x, y, width, height, texture,speed):
@@ -617,15 +712,13 @@ class block(shape):
     def mined(self):
         if self.wasMined:
             return
-        try:
-            objects.remove(self)
-            blocks.remove(self)
-            colliders.remove(self)
-            print(f"yoo greetings from{self.name}")
-            self.wasMined = True
-            flickUpdateFrame()
-        except Exception as e:
-            print(e)
+        
+        colliders.remove(self)
+        blocks.remove(self)
+        print(f"yoo greetings from{self.name}")
+        self.wasMined = True
+        inventory.add(self,1)
+        flickUpdateFrame()
 
 class dirt(block):
     def __init__(self, gridx, gridy):
@@ -645,19 +738,7 @@ class leaves(block):
     
 
 # load textures
-def loadTextures():
-    global dirtTexture,grassTexure,woodTexture,leavesTexture,characterTexture,cursorTexture,interfaceBGTexture,itemFrameTexture
 
-    dirtTexture = texture(dirtT)
-    grassTexure = texture(grassT)
-    woodTexture = texture(woodT)
-    leavesTexture = texture(leavesT)
-    characterTexture = texture(characterT)
-    cursorTexture = texture(cursorT)
-    interfaceBGTexture = texture(interfaceBGT)
-    itemFrameTexture = texture(itemFrameT)
-
-loadTextures()
 namesNClasses = {
     "dirt": dirt,
     "grass": grass,
@@ -684,23 +765,9 @@ objects.remove(cursor)
 # ground = rectangle(0,HEIGHT-10,WIDTH,10,createTextr(WIDTH,10,(100,10,80)))
 
 
-# menu interface
-interfaceObjects = [
-    [],
-    []
-]
-interfaceBG = shape.fromTexture(96,0,interfaceBGTexture)
-interfaceObjects[0].append(interfaceBG)
-FRAME_ROWS = 5
-FRAME_COLLUMNS = 45
-FRAME_INDENT_X = 1
-FRAME_INDENT_Y = 1
-FRAME_WIDTH = 17
-FRAME_HEIGHT = 10
-for y in range(FRAME_COLLUMNS):
-    for x in range(FRAME_ROWS):
-        itemFrame = shape.fromTexture(100+(FRAME_WIDTH+FRAME_INDENT_X)*x,3+(FRAME_HEIGHT+FRAME_INDENT_Y)*y,itemFrameTexture)
-        interfaceObjects[1].append(itemFrame)
+
+
+
 # item frame width: 17, height: 10
 
 def render():
@@ -775,7 +842,6 @@ keyboard.hook(lambda e: action(e))
 
 deltaTime = 0.017
 while True:
-    hideCursor()
     startTime = time.time()
     control()
     player.applyJump()

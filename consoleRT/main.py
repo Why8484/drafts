@@ -23,7 +23,8 @@ objects = []
 colliders = []
 items = []
 blocks = []
-WIDTH = 96
+WIDTH = 192
+GAME_WIDTH = 96
 HEIGHT = 48   
 BLOCK_SIZE = 6
 GRID_WIDTH = 16
@@ -212,7 +213,13 @@ def findInChars(intensity):
     return CHARS  [intensity]
 
 def findSymbByCoords (fx,fy):
+    try:
+        symbols[fy*WIDTH+fx]
+    except:
+        print(fx,fy)
+        input()
     return symbols[fy*WIDTH+fx]
+    
 
 def measureDistance(x1,y1,x2,y2):
     xDistance = abs(x1-x2)
@@ -258,17 +265,25 @@ STRINGS_START = STRINGS.copy()
 BG_COLOR = COLORS.WHITE
 
 class symbol:
-    def __init__(self,color,intensity,x,y):
+    def __init__(self,color,intensity,x,y,menuSymb = False):
         self.x = x
         self.y = y
         self.color = color
         self.intensity = intensity
         self.distanceFromLight = 0
+        self.menuSymb = menuSymb
+        if menuSymb:
+            self.intensity = MAX_INTENSITY
         symbols.append(self)
 
+# SPAWN ALL SYMBOLS
 for y in range(HEIGHT):
     for x in range(WIDTH):
-        newSymb = symbol(COLORS.WHITE, 0, x,y)
+        if x > GAME_WIDTH:
+            newSymb = symbol(COLORS.WHITE, 0, x,y,True)
+            continue
+        newSymb = symbol(COLORS.WHITE, 0, x,y,False)
+
 
 class texture:
     def __init__(self,texture:list):
@@ -279,6 +294,10 @@ class texture:
         if self.texture[y][x] == (-12,-12,-12):
             return BG_COLOR
         return COLORS.RGBtoANSI(self.texture[y][x])
+    def getWidth(self):
+        return len(self.texture[0])
+    def getHeight(self):
+        return len(self.texture)
 
 class shape:
     def __init__(self,x,y,width,height,texture):
@@ -304,6 +323,10 @@ class shape:
             for x in range(self.width):
                 symb = findSymbByCoords(self.x+x,self.y+y)
                 symb.color = self.texture.findInTexture(x,y)
+
+    @classmethod
+    def fromTexture(cls,x,y,textr:texture):
+        return cls(x,y,textr.getWidth(),textr.getHeight(),textr)
 
 
 def isBetween(val, min,max):
@@ -394,7 +417,7 @@ class character(rectangle):
         self.timeMining = 0
     def move(self,amt):
         self.checkForItems()
-        if 0 <= self.x + amt <= WIDTH-self.width:
+        if 0 <= self.x + amt <= GAME_WIDTH-self.width:
             self.x += amt
         if checkListCollision(self,colliders) is not None:
             self.x -= amt
@@ -509,7 +532,7 @@ class lightSource():
         # get all symbols in square with a side of range*2+someSafetyShit around the source
         for y in range(self.y-self.range-1,self.y+self.range+2):    
             for x in range(self.x-self.range-1,self.x+self.range+2):  
-                if not 0 <= x < WIDTH:
+                if not 0 <= x < GAME_WIDTH:
                     continue
                 if not 0 <= y < HEIGHT:
                     break
@@ -623,7 +646,7 @@ class leaves(block):
 
 # load textures
 def loadTextures():
-    global dirtTexture,grassTexure,woodTexture,leavesTexture,characterTexture,cursorTexture
+    global dirtTexture,grassTexure,woodTexture,leavesTexture,characterTexture,cursorTexture,interfaceBGTexture,itemFrameTexture
 
     dirtTexture = texture(dirtT)
     grassTexure = texture(grassT)
@@ -631,6 +654,8 @@ def loadTextures():
     leavesTexture = texture(leavesT)
     characterTexture = texture(characterT)
     cursorTexture = texture(cursorT)
+    interfaceBGTexture = texture(interfaceBGT)
+    itemFrameTexture = texture(itemFrameT)
 
 loadTextures()
 namesNClasses = {
@@ -652,10 +677,31 @@ bestLight = lightSource(0,0,48,1,MAX_INTENSITY)
 # player object
 player = character(0,0,6,10,characterTexture,1)
 
+
 # block types:
-cursor = shape(0,0,4,4,cursorTexture)
+cursor = shape.fromTexture(0,0,cursorTexture)
 objects.remove(cursor)
 # ground = rectangle(0,HEIGHT-10,WIDTH,10,createTextr(WIDTH,10,(100,10,80)))
+
+
+# menu interface
+interfaceObjects = [
+    [],
+    []
+]
+interfaceBG = shape.fromTexture(96,0,interfaceBGTexture)
+interfaceObjects[0].append(interfaceBG)
+FRAME_ROWS = 5
+FRAME_COLLUMNS = 45
+FRAME_INDENT_X = 1
+FRAME_INDENT_Y = 1
+FRAME_WIDTH = 17
+FRAME_HEIGHT = 10
+for y in range(FRAME_COLLUMNS):
+    for x in range(FRAME_ROWS):
+        itemFrame = shape.fromTexture(100+(FRAME_WIDTH+FRAME_INDENT_X)*x,3+(FRAME_HEIGHT+FRAME_INDENT_Y)*y,itemFrameTexture)
+        interfaceObjects[1].append(itemFrame)
+# item frame width: 17, height: 10
 
 def render():
     os.system("cls")
@@ -667,6 +713,7 @@ def render():
     player.draw() # draw it last
     # cursor.draw()
     for symb in symbols:
+        symb:symbol
         if symb.x < WIDTH:
             symbStr = f"{symb.color}{findInChars(symb.intensity)}{COLORS.RESET}"
             STRINGS[symb.y] = STRINGS[symb.y] + symbStr

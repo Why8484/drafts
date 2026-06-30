@@ -8,6 +8,8 @@ retry = True
 while retry:
     path = input("Enter path of the image (!USE THIS SLASH: '/'!)(use folder for folder input): ")
     saveFolder = input("enter save folder path: ")
+    if saveFolder == "":
+        saveFolder = "txtrs"
     if path == "clipboard":
         img = ImageGrab.grabclipboard()
         if img:

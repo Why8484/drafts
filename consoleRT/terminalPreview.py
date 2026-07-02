@@ -75,11 +75,22 @@ while True:
     if path == "folder":
         folderPath = input("enter folder path: ")
         try:
-            os.listdir(SCRIPT_DIR / folderPath)
-            for filename in os.listdir(SCRIPT_DIR / folderPath):
+            for filename in os.listdir(SCRIPT_DIR / folderPath):   
                 previewImage(os.path.join(folderPath,filename))
         except:
             pass
+    elif path == "subfolder":
+        subFolderPath = input("enter subfolder path: ")
+        try:
+            for folder in os.listdir(SCRIPT_DIR / subFolderPath):
+                joinedFolderPath = os.path.join(subFolderPath,folder)
+                if joinedFolderPath.endswith((".png",".jpg")):
+                    previewImage(joinedFolderPath)
+                    continue
+                for fileN in os.listdir(SCRIPT_DIR / joinedFolderPath):
+                    previewImage(os.path.join(joinedFolderPath,fileN))
+        except Exception as e:
+            print(e)
     else:
         try:    
             previewImage(path)

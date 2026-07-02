@@ -3,7 +3,7 @@ from pathlib import Path
 
 SCRIPT_FOLDER = Path(__file__).parent
 
-def loadtexture(path):
+def loadTexture(path):
     fullPath = SCRIPT_FOLDER / path
 
     with open(fullPath,"r") as f:
@@ -15,12 +15,26 @@ def loadtexture(path):
         output.append(row)
     
     return output
-    
-dirtT = loadtexture(r"txtrs/dirt.txt")
-grassT = loadtexture(r"txtrs/grass.txt")
-woodT = loadtexture(r"txtrs/wood.txt")
-leavesT = loadtexture(r"txtrs/leaves.txt")
-characterT = loadtexture(r"txtrs/character.txt")
-cursorT = loadtexture(r"txtrs/cursor.txt")
-interfaceBGT = loadtexture(r"txtrs/interfaceBG.txt")
-itemFrameT = loadtexture(r"txtrs/itemFrame.txt")
+
+
+characterT = loadTexture(r"txtrs/character.txt")
+cursorT = loadTexture(r"txtrs/cursor.txt")
+interfaceBGT = loadTexture(r"txtrs/interfaceBG.txt")
+itemFrameT = loadTexture(r"txtrs/itemFrame.txt")
+
+# dirt
+brightDirtT = loadTexture(r"txtrs/dirt/brightDirt.txt")
+darkDirtT = loadTexture(r"txtrs/dirt/darkDirt.txt")
+dirtT = loadTexture(r"txtrs/dirt/dirt.txt")
+# grass
+brightGrassT = loadTexture(r"txtrs/grass/brightGrass.txt")
+darkGrassT = loadTexture(r"txtrs/grass/darkGrass.txt")
+grassT = loadTexture(r"txtrs/grass/grass.txt")
+# leaves
+brightLeavesT = loadTexture(r"txtrs/leaves/brightLeaves.txt")
+darkLeavesT = loadTexture(r"txtrs/leaves/darkLeaves.txt")
+leavesT = loadTexture(r"txtrs/leaves/leaves.txt")
+# wood
+brightWoodT = loadTexture(r"txtrs/wood/brightWood.txt")
+darkWoodT = loadTexture(r"txtrs/wood/darkWood.txt")
+woodT = loadTexture(r"txtrs/wood/wood.txt")

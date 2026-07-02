@@ -2,6 +2,7 @@
 import pygame
 import ast
 import os
+import random
 
 # pygame setup
 pygame.init()
@@ -45,13 +46,21 @@ else:
 
 
 
-
+saveCount = 0
 def drawImage(offsetx,offsety,realLsts):
-    global offsetX,offsetY,distanceBetweenImgs
+    global offsetX,offsetY,distanceBetweenImgs,saveCount
 
+    newSurf = pygame.Surface((6,6))
     for y,xs in enumerate(realLsts):
         for x,tx in enumerate(xs):
+            tx = (0,0,0) if tx == (-12,-12,-12) else tx
             pygame.draw.rect(screen,tx,(x*scale+offsetx,y*scale+offsety,1*scale,1*scale))
+            pygame.draw.rect(newSurf,tx,(x,y,1,1))
+    
+    if saveCount < 0:
+        pygame.image.save(newSurf,f"backup{random.random()}.png")
+        saveCount += 1
+    
     
 
 while running:

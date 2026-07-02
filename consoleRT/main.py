@@ -2,11 +2,11 @@ import os
 import time
 import keyboard
 from keyboard._keyboard_event import KEY_DOWN,KEY_UP
-from textures import *
 from math import ceil
-from startLayout import mainLayout
+from layouts import mainLayout,boxLayout
 from pynput.mouse import Controller,Listener
 import pygetwindow
+    
 
 symbols:list = []
 objects = []
@@ -23,6 +23,87 @@ MIN_INTENSITY = 0
 GRAVITY = 0.3
 updateFrame = True
 startGravity = True
+
+def getPointsFromLine(x1,y1,x2,y2):
+    # for horizontal lines
+    def getPointsFromLineH(x1,y1,x2,y2):
+        # output list
+        pixels = []
+
+        # swap values if endX is greater than startX
+        if x1 > x2:
+            x1,x2 = x2,x1
+            y1,y2 = y2,y1
+        
+        # compute deltas
+        dx = x2-x1
+        dy = y2-y1
+
+        # factor for y if line is negative
+        yFactor = -1 if dy < 0 else 1
+        dy *= yFactor
+
+        # check if dx is not 0 to avoid division by zero
+        if dx != 0:
+
+            # create a variable that starts at initial y
+            yCurrent = y1
+
+            # current y directly on the line(it's initial version)
+            pixelCurrentY = 2*dy - dx
+
+            # iterate delta x to get it's evry part incremented by 1
+            for dxPart in range(dx+1):
+
+                # append needed pixel to output
+                pixels.append((x1+dxPart,yCurrent))
+
+                # incerement current Y if incremented is nearer to the line
+                if pixelCurrentY >= 0:
+                    yCurrent += yFactor
+                    pixelCurrentY -= 2*dx
+                
+                # do this anyway(move pixel current linewise)
+                pixelCurrentY += 2*dy
+        
+        # return
+        return pixels
+
+    # for vertical lines
+    def getPointsFromLineV(x1,y1,x2,y2):
+        # for explains look into getPointsFromLineH (it's the same but with swaped x and y)
+
+        pixels = []
+        if y1 > y2:
+            x1,x2 = x2,x1
+            y1,y2 = y2,y1
+        
+        dx = x2-x1
+        dy = y2-y1
+
+        yFactor = -1 if dx < 0 else 1
+        dx *= yFactor
+
+        if dy != 0:
+            xCurrent = x1
+            pixelCurrentX = 2*dx - dy
+            for dyPart in range(dy+1):
+                pixels.append((xCurrent,y1+dyPart))
+                if pixelCurrentX >= 0:
+                    xCurrent += yFactor
+                    pixelCurrentX -= 2*dy
+                pixelCurrentX += 2*dx
+        return pixels
+    
+    # detect whether the line is vertical or horizontal
+    x1 = round(x1)
+    y1 = round(y1)
+    x2 = round(x2)
+    y2 = round(y2)
+    
+    if abs(x1-x2) > abs(y1-y2):
+        return getPointsFromLineH(x1,y1,x2,y2)
+    return getPointsFromLineV(x1,y1,x2,y2)
 
 class window:
     @classmethod
@@ -80,6 +161,8 @@ class COLORS:
         ansi = f"\033[38;2;{r};{g};{b}m"
         return ansi
 
+
+
 class MOUSE:
     mousex = 0
     mousey = 0
@@ -120,26 +203,47 @@ class MOUSE:
 
     @classmethod
     def onLeftClick(cls):
+        global prevHoverBlock
+
+
         if cls.buttonsClicked["left"]:
             if not player.isMining:
-                hoverBlock = block.findFromCoords((cursor.x,cursor.y))
-                player.isMining = True
+                hoverBlock:block|None = block.findFromCoords((cursor.x,cursor.y))
+                if player.blockMining is not None:    
+                    player.blockMining.texture = player.blockMining.standartVersion
                 player.blockMining = hoverBlock
-                if player.blockMining is  None:
+                if player.blockMining is None:
+                    return
+
+                # if there is a hover block:
+                player.isMining = True
+
+                # check if reachable
+                player.updateSides()
+                player.blockMining.updateSides()
+                if measureDistanceBetweenObjects(player,player.blockMining) > player.mineDistance*BLOCK_SIZE:
                     player.isMining = False
-                if player.blockMining is not None:
-                    pass
+                    player.blockMining = None
+                    return
+                
+                if player.whatLookingAt(blocks) != player.blockMining:
+                    player.isMining = False
+                    player.blockMining = None
+                    return
+                
+                hoverBlock.texture = hoverBlock.brightVersion
+                flickUpdateFrame()
                 player.timeMining = 0
                 return
             player.mine()
         else:
+            if player.blockMining is not None:    
+                player.blockMining.texture = player.blockMining.standartVersion
+                flickUpdateFrame()
             if player.isMining:
                 player.isMining = False
                 player.blockMining = None
                 player.timeMining = 0
-
-
-# PYNPUT SPECIAL MOUSE:
 
 # # turn off quick edit mode on windows
 def win32_event_filter(msg, data):
@@ -187,11 +291,6 @@ CHARS = {
 }
 MAX_INTENSITY = len(CHARS)-1
 
-
-
-
-
-
 def createTextr (width, height,colRGB):
     output = []
     for y in range(height):
@@ -210,11 +309,7 @@ def findInChars(intensity):
     return CHARS  [intensity]
 
 def findSymbByCoords (fx,fy):
-    try:
-        symbols[fy*WIDTH+fx]
-    except:
-        print(fx,fy)
-        input()
+    symbols[fy*WIDTH+fx]
     return symbols[fy*WIDTH+fx]
     
 
@@ -224,7 +319,11 @@ def measureDistance(x1,y1,x2,y2):
     distance = (xDistance**2+yDistance**2)**(1/2)
     return distance
 
-def measureDistanceBetweenObjects(obj1,obj2):
+def measureDistanceBetweenObjects(obj1,obj2,center=False):
+    if center:
+        obj1.updateSides()
+        obj2.updateSides()
+        return measureDistance(obj1.center[0],obj1.center[1],obj1.center[0],obj2.center[1])
     return measureDistance(obj1.x,obj1.y,obj2.x,obj2.y)
 
 def indexDict (dict,obj):
@@ -308,6 +407,7 @@ class shape:
         self.left = self.x
         self.top = self.y
         self.center = self.x+self.width//2,self.y+self.height//2
+        self.corners = [(self.left,self.top),(self.left,self.bottom),(self.right,self.top),(self.right,self.bottom)]
         objects.append(self)
     def updateSides(self):
         self.bottom = self.y + self.height
@@ -315,6 +415,7 @@ class shape:
         self.left = self.x
         self.top = self.y
         self.center = self.x+self.width//2,self.y+self.height//2
+        self.corners = [(self.left,self.top),(self.left,self.bottom),(self.right,self.top),(self.right,self.bottom)]
     def draw(self):
         for y in range(self.height):
             for x in range(self.width):
@@ -326,16 +427,31 @@ class shape:
         return cls(x,y,textr.getWidth(),textr.getHeight(),textr)
 
 def loadTextures():
-    global dirtTexture,grassTexure,woodTexture,leavesTexture,characterTexture,cursorTexture,interfaceBGTexture,itemFrameTexture
+    global grassTexture,darkDirtTexture,darkGrassTexture,characterTexture,brightDirtTexture,interfaceBGTexture
+    global cursorTexture,darkWoodTexture,brightLeavesTexture,brightGrassTexture,itemFrameTexture,leavesTexture,woodTexture,darkLeavesTexture,brightWoodTexture
+    global dirtTexture
+    import textures
 
-    dirtTexture = texture(dirtT)
-    grassTexure = texture(grassT)
-    woodTexture = texture(woodT)
-    leavesTexture = texture(leavesT)
-    characterTexture = texture(characterT)
-    cursorTexture = texture(cursorT)
-    interfaceBGTexture = texture(interfaceBGT)
-    itemFrameTexture = texture(itemFrameT)
+
+    brightLeavesTexture = texture(textures.brightLeavesT)
+    darkWoodTexture = texture(textures.darkWoodT)
+    brightDirtTexture = texture(textures.brightDirtT)
+    interfaceBGTexture = texture(textures.interfaceBGT)
+    leavesTexture = texture(textures.leavesT)
+    cursorTexture = texture(textures.cursorT)
+    darkLeavesTexture = texture(textures.darkLeavesT)
+    characterTexture = texture(textures.characterT)
+    brightGrassTexture = texture(textures.brightGrassT)
+    dirtTexture = texture(textures.dirtT)
+    woodTexture = texture(textures.woodT)
+    darkDirtTexture = texture(textures.darkDirtT)
+    itemFrameTexture = texture(textures.itemFrameT)
+    grassTexture = texture(textures.grassT)
+    brightWoodTexture = texture(textures.brightWoodT)
+    darkGrassTexture = texture(textures.darkGrassT)
+
+
+
 
 loadTextures()
 
@@ -396,6 +512,11 @@ def checkPointCollision(collider:shape,pos:tuple):
     
     return overlaps
 
+def checkPointListCollision(pos:tuple,lst:list):
+    for element in lst:
+        if checkPointCollision(element,pos):
+            return element
+    return None
 
 def checkListCollision(col1,lst):
     lstCopy = lst.copy()
@@ -406,8 +527,35 @@ def checkListCollision(col1,lst):
             return element
     return None
 
+def getMinDistance(obj1:shape,obj2:shape):
+    # update sides
+    obj1.updateSides()
+    obj2.updateSides()
 
+    # get all distances between every corner
+    cornerDistances = []
+    for x1,y1 in obj1.corners:
+        for x2,y2 in obj2.corners:
+            cornerDistances.append((measureDistance(x1,y1,x2,y2),(x1,y1,x2,y2)))
+    diagonalDistance,closestCornerPair = min(cornerDistances, key=lambda x: x[0])
+
+    # check if objects are lined up
+    cx1,cy1,cx2,cy2 = closestCornerPair
+    dx = abs(cx1-cx2)
+    dy = abs(cy1-cy2)
+    if dx == 0:
+        return dy
+    if dy == 0:
+        return dx
+    # one side inside between another two by X
+    if isBetween(obj2.left,obj1.left,obj1.right) or isBetween(obj1.left,obj2.left,obj2.right) or isBetween(obj2.right,obj1.left,obj1.right) or isBetween(obj1.right,obj2.left,obj2.right):
+        return(min(diagonalDistance,dy))
     
+    # one side is inside onther two by Y 
+    if isBetween(obj2.bottom,obj1.top,obj1.bottom) or isBetween(obj1.bottom,obj2.top,obj2.bottom) or isBetween(obj2.top,obj1.top,obj1.bottom) or isBetween(obj1.top, obj2.top,obj2.bottom):
+        return min((diagonalDistance,dx))
+    
+    return diagonalDistance
 
 class inventory:
     itemFrames = []
@@ -497,19 +645,40 @@ class rectangle(shape):
 
 
 class character(rectangle):
-    def __init__(self, x, y, width, height, texture,speed):
+    def __init__(self, x, y, width, height, texture,speed,mineStrength):
         super().__init__(x, y, width, height, texture)
         self.speed = speed
+        self.mineStrength = mineStrength
         self.fall = 0
+        self.mineDistance = 2
         self.isJumping = False
         self.jumpForce = 2
         self.jumpVelocity = 0
         self.grounded = False
+        self.eyesX = self.x+4
+        self.eyesY = self.y+2
         self.groundedObject = None
         self.light = bestLight
         self.isMining = False
         self.blockMining = None
         self.timeMining = 0
+    def updateSides(self):
+        super().updateSides()
+        self.eyesX = self.center[0]
+        self.eyesY = self.center[1]
+
+    def whatLookingAt(self,lst):
+        self.updateSides()
+
+        lookLinePoints = getPointsFromLine(self.eyesX,self.eyesY,cursor.x,cursor.y)
+        for point in lookLinePoints:
+            for t in lst:
+                if checkPointCollision(t,point):
+                    return t
+        return None
+
+
+
     def move(self,amt):
         self.checkForItems()
         if 0 <= self.x + amt <= GAME_WIDTH-self.width:
@@ -560,13 +729,13 @@ class character(rectangle):
         self.jumpVelocity -= 0.3
         collisionObject = checkListCollision(self,colliders)
         if collisionObject is not None:
-            if self.jumpVelocity <= 0:
+            if self.jumpVelocity <= 0 and abs(self.bottom - collisionObject.top) < 2:
                 self.y = collisionObject.y-self.height
                 self.grounded = True
                 self.groundedObject = collisionObject
                 self.isJumping = False
                 startGravity = True
-            else:
+            elif abs(self.top - collisionObject.bottom) < 2:
                 self.y = collisionObject.y+collisionObject.height
                 self.jumpVelocity = 0
         if self.jumpVelocity == -self.jumpForce-1:
@@ -597,7 +766,7 @@ class character(rectangle):
     def mine(self):
         self.timeMining += deltaTime
         self.blockMining:block
-        if self.blockMining.mineTime < self.timeMining:
+        if self.blockMining.mineTime*(1/self.mineStrength) < self.timeMining:
             self.blockMining.mined()
 
 class lightSource():
@@ -691,50 +860,78 @@ class lightItem(item):
         super().onCollection()
 
 class block(shape):
-    def __init__(self, gridX, gridY, texture,name:str,mineTime):
+    def __init__(self, gridX, gridY, texture,name:str,mineTime,darkVersion,brightVersion):
         self.name:str = name
         self.gridx = gridX
         self.gridy = gridY
-        self.mineTime = mineTime
+        self.mineTime = mineTime         
+        self.darkVersion = darkVersion
+        self.brightVersion = brightVersion
         self.wasMined = False
+        self.neighbours = []
         x,y = self.getCoordsFromGridCoords()
         colliders.append(self)
         blocks.append(self)
         super().__init__(x, y, BLOCK_SIZE, BLOCK_SIZE, texture)
+        self.standartVersion = self.texture
+        self.updateNeighbours()
     def getCoordsFromGridCoords(self):
         return self.gridx * BLOCK_SIZE, self.gridy * BLOCK_SIZE
     @classmethod
     def findFromCoords(cls,pos):
-        for bl in blocks:
-            if checkPointCollision(bl,pos):
-                return bl
+        if not 0 <= pos[0] < GAME_WIDTH or not 0 <= pos[1] < HEIGHT:
+            return None
         
+        gx = int(pos[0]//BLOCK_SIZE)
+        gy = int(pos[1]//BLOCK_SIZE)
+
+        for bl in blocks:
+            if bl.gridx == gx and bl.gridy == gy:
+                return bl
+        return None
+    
+    def updateNeighbours(self):
+        self.updateSides()
+        self.neighbours = [
+        self.findFromCoords((self.x,self.y-3)),
+        self.findFromCoords((self.x,self.bottom+3)),
+        self.findFromCoords((self.x-3,self.y)),
+        self.findFromCoords((self.right+3,self.y)),
+        ]
+        for neigh in self.neighbours[:]:
+            if neigh is None:
+                self.neighbours.remove(neigh)
     def mined(self):
         if self.wasMined:
             return
         
+        self.texture = self.standartVersion
+        
+        for neigh in self.neighbours:
+            neigh:block
+            neigh.updateNeighbours()
+
         colliders.remove(self)
         blocks.remove(self)
-        print(f"yoo greetings from{self.name}")
         self.wasMined = True
         inventory.add(self,1)
         flickUpdateFrame()
 
 class dirt(block):
     def __init__(self, gridx, gridy):
-        super().__init__(gridx, gridy, dirtTexture, "dirt",0.4)
+        super().__init__(gridx, gridy, dirtTexture, "dirt",0.4,darkDirtTexture,brightDirtTexture)
 
 class grass(block):
     def __init__(self, gridX, gridY):
-        super().__init__(gridX, gridY, grassTexure, "grass", 1)
+        super().__init__(gridX, gridY, grassTexture, "grass", 1,darkGrassTexture,brightGrassTexture)
 
 class wood(block):
     def __init__(self, gridX, gridY):
-        super().__init__(gridX, gridY, woodTexture,"wood",2)
+        super().__init__(gridX, gridY, woodTexture,"wood",2,darkWoodTexture,brightWoodTexture)
 
 class leaves(block):
     def __init__(self, gridX, gridY):
-        super().__init__(gridX, gridY, leavesTexture, "leaves", 0.1)
+        super().__init__(gridX, gridY, leavesTexture, "leaves", 0.1,darkLeavesTexture,brightLeavesTexture)
     
 
 # load textures
@@ -747,6 +944,7 @@ namesNClasses = {
 }
 loadLayout(mainLayout)
 
+prevHoverBlock = blocks[0]
 
 # OBJECTS:
 
@@ -756,18 +954,13 @@ startLight = lightSource(0,0,5,1,14, True)
 bestLight = lightSource(0,0,48,1,MAX_INTENSITY)
 
 # player object
-player = character(0,0,6,10,characterTexture,1)
+player = character(7*BLOCK_SIZE,1*BLOCK_SIZE,6,10,characterTexture,1,1)
 
 
 # block types:
 cursor = shape.fromTexture(0,0,cursorTexture)
 objects.remove(cursor)
 # ground = rectangle(0,HEIGHT-10,WIDTH,10,createTextr(WIDTH,10,(100,10,80)))
-
-
-
-
-
 # item frame width: 17, height: 10
 
 def render():
@@ -789,13 +982,8 @@ def render():
 
 def drawObjects():
     for o in objects:
-        try:
-            o.x = round(o.x)
-            o.y = round(o.y)
-        except Exception as e:
-            print(o,e)
-            input()
-            continue
+        o.x = round(o.x)
+        o.y = round(o.y)
         o.draw()
 
 # pressed keys. USEd for controls+
@@ -842,15 +1030,19 @@ keyboard.hook(lambda e: action(e))
 
 deltaTime = 0.017
 while True:
-    startTime = time.time()
-    control()
-    player.applyJump()
-    if startGravity:    
-        player.applyGravity()
-    if updateFrame:    
-        render()
-        updateFrame = False
+    try:
+        startTime = time.time()
+        control()
+        player.applyJump()
+        if startGravity:    
+            player.applyGravity()
+        if updateFrame:    
+            render()
+            updateFrame = False
 
-    time.sleep(0.017)
-    endTime = time.time()
-    deltaTime = endTime - startTime
+        time.sleep(0.017)
+        endTime = time.time()
+        deltaTime = endTime - startTime
+    except Exception as e:
+        print(e)
+        input()

@@ -21,6 +21,7 @@ characterT = loadTexture(r"txtrs/character.txt")
 cursorT = loadTexture(r"txtrs/cursor.txt")
 interfaceBGT = loadTexture(r"txtrs/interfaceBG.txt")
 itemFrameT = loadTexture(r"txtrs/itemFrame.txt")
+HitemframeT = loadTexture(r"txtrs/HitemFrame.txt")
 
 # dirt
 brightDirtT = loadTexture(r"txtrs/dirt/brightDirt.txt")

@@ -75,8 +75,11 @@ while True:
     if path == "folder":
         folderPath = input("enter folder path: ")
         try:
-            for filename in os.listdir(SCRIPT_DIR / folderPath):   
-                previewImage(os.path.join(folderPath,filename))
+            for filename in os.listdir(SCRIPT_DIR / folderPath):       
+                if filename.endswith((".png",".jpg")):    
+                    previewImage(os.path.join(folderPath,filename))
+                else:
+                    continue
         except:
             pass
     elif path == "subfolder":

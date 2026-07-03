@@ -4,7 +4,7 @@ import keyboard
 from keyboard._keyboard_event import KEY_DOWN,KEY_UP
 from math import ceil
 from layouts import mainLayout,boxLayout
-from pynput.mouse import Controller,Listener
+from pynput.mouse import *
 import pygetwindow
     
 
@@ -13,6 +13,8 @@ objects = []
 colliders = []
 items = []
 blocks = []
+objectLists = [objects,colliders,items,blocks]
+
 WIDTH = 192
 GAME_WIDTH = 96
 HEIGHT = 48   
@@ -23,6 +25,17 @@ MIN_INTENSITY = 0
 GRAVITY = 0.3
 updateFrame = True
 startGravity = True
+
+
+def isBetween(val, min,max):
+    if min < val < max:
+        return True
+    return False
+
+def inclusiveIsBetween(val,min,max):
+    if min <= val <= max:
+        return True
+    return False
 
 def getPointsFromLine(x1,y1,x2,y2):
     # for horizontal lines
@@ -127,10 +140,9 @@ class window:
         charX = inWindowX // cls.fontWidth
         charY = inWindowY // cls.fontHeight
         return charX,charY
-        
 
 
-time.sleep(0.5)
+# time.sleep(0.5)
 window.updateSpecs()
 
 class COLORS:
@@ -168,7 +180,6 @@ class MOUSE:
     mousey = 0
     prevMousex = 0
     prevMousey = 0
-    cursorImage = None
     buttonsClicked  = {
         "left": False,
         "right": False,
@@ -204,7 +215,6 @@ class MOUSE:
     @classmethod
     def onLeftClick(cls):
         global prevHoverBlock
-
 
         if cls.buttonsClicked["left"]:
             if not player.isMining:
@@ -244,15 +254,87 @@ class MOUSE:
                 player.isMining = False
                 player.blockMining = None
                 player.timeMining = 0
+    
+    @classmethod
+    def onRightClick(cls):
+        if cls.buttonsClicked["right"]:
+            hoverBlock:block|None = block.findFromCoords((cursor.x,cursor.y))
+            if hoverBlock is not None:
+                return
+
+            if player.selectedBlock == None:
+                return
+
+            newBlock:block = player.selectedBlock(0,0)
+            newBlock.gridx,newBlock.gridy = newBlock.getGridCoordsFromCoords(cursor.x,cursor.y)
+            newBlock.x,newBlock.y = newBlock.getCoordsFromGridCoords()
+            if newBlock not in colliders:    
+                colliders.append(newBlock)
+            if newBlock not in blocks:
+                blocks.append(newBlock)
+            
+            if checkCollision(player,newBlock):
+                newBlock.destroy()
+                return
+
+            player.updateSides()
+            newBlock.updateSides()
+            if measureDistanceBetweenObjects(player,newBlock) > player.placeDistance*BLOCK_SIZE:
+                newBlock.destroy()
+                return
+            
+            if player.whatLookingAt(blocks) != newBlock:
+                newBlock.destroy()
+                return
+            
+            player.selectedFrame.count -= 1
+            if player.selectedFrame.count == 0:
+                player.selectedBlock = None
+                player.selectedFrame.clearItem()
+            else:    
+                player.selectedFrame.clearCount()
+                player.selectedFrame.displayCount() 
+            flickUpdateFrame()
+    
+    @classmethod
+    def onScrollDown(cls):
+        if player.selectedFrameIndex + 1 > len(inventory.itemFrames)-1:
+            return    
+        
+        player.selectedFrame.deselect()
+        player.selectedFrameIndex += 1
+        player.updateSelectedBlock()
+        flickUpdateFrame()
+    
+    @classmethod
+    def onScrollUp(cls):
+        if player.selectedFrameIndex - 1 < 0:
+            return
+        
+        player.selectedFrame.deselect()
+        player.selectedFrameIndex -= 1
+        player.updateSelectedBlock()
+        flickUpdateFrame()
+
+        
+
 
 # # turn off quick edit mode on windows
 def win32_event_filter(msg, data):
     if msg == 516:
         MOUSE.buttonsClicked["right"] = True
+        MOUSE.onRightClick()
+        Listener.suppress = True
         return False 
+    if msg == 0x41:
+        Listener.suppress = True
+    if msg == 0x44:
+        Listener.suppress = True
     elif msg == 517:
         MOUSE.buttonsClicked["right"] = False
         return False
+    
+    Listener.suppress = False
     
     return True
 
@@ -263,7 +345,15 @@ def onClick(x,y,button,pressed):
 
 def onMove(x,y):
     MOUSE.onMove(x,y)
-mouseListener = Listener(on_move=onMove,on_click=onClick,win32_event_filter=win32_event_filter)
+
+def onScroll(x, y, dx, dy):
+    if dy < 0:
+        MOUSE.onScrollDown()
+        return
+    MOUSE.onScrollUp()
+    
+    
+mouseListener = Listener(on_move=onMove,on_click=onClick,on_scroll=onScroll,win32_event_filter=win32_event_filter)
 mouseListener.start()
 
 
@@ -401,6 +491,7 @@ class shape:
         self.y = y
         self.width = width
         self.texture = texture
+        self.lists = [objects]
         self.height = height
         self.bottom = self.y + self.height
         self.right = self.x + self.width
@@ -409,6 +500,11 @@ class shape:
         self.center = self.x+self.width//2,self.y+self.height//2
         self.corners = [(self.left,self.top),(self.left,self.bottom),(self.right,self.top),(self.right,self.bottom)]
         objects.append(self)
+    def destroy(self):
+        for lst in self.lists:
+            if self in lst:    
+                lst.remove(self)
+        del self
     def updateSides(self):
         self.bottom = self.y + self.height
         self.right = self.x + self.width
@@ -429,10 +525,11 @@ class shape:
 def loadTextures():
     global grassTexture,darkDirtTexture,darkGrassTexture,characterTexture,brightDirtTexture,interfaceBGTexture
     global cursorTexture,darkWoodTexture,brightLeavesTexture,brightGrassTexture,itemFrameTexture,leavesTexture,woodTexture,darkLeavesTexture,brightWoodTexture
-    global dirtTexture
+    global dirtTexture,HitemFrameTexture
     import textures
 
 
+    HitemFrameTexture = texture(textures.HitemframeT)
     brightLeavesTexture = texture(textures.brightLeavesT)
     darkWoodTexture = texture(textures.darkWoodT)
     brightDirtTexture = texture(textures.brightDirtT)
@@ -455,15 +552,6 @@ def loadTextures():
 
 loadTextures()
 
-def isBetween(val, min,max):
-    if min < val < max:
-        return True
-    return False
-
-def inclusiveIsBetween(val,min,max):
-    if min <= val <= max:
-        return True
-    return False
 
 def checkCollision(collider1:shape,collider2:shape):
     collider1.updateSides()
@@ -595,10 +683,14 @@ class inventory:
             nextEmptyFrame
         except:    
             nextEmptyFrame:itemFrame = cls.getNextEmptyFrame()
-        nextEmptyFrame.item = item
+        
+        if nextEmptyFrame.count == 0:
+            nextEmptyFrame.item = item
+            item.x = nextEmptyFrame.itemX
+            item.y = nextEmptyFrame.itemY
+        else:
+            item.destroy()
         nextEmptyFrame.count += count
-        item.x = nextEmptyFrame.itemX
-        item.y = nextEmptyFrame.itemY
         nextEmptyFrame.displayCount()
     
     @classmethod
@@ -620,6 +712,8 @@ class itemFrame(shape):
         self.countY = self.itemY
         self.countXEnd = self.countX+BLOCK_SIZE
         self.countYEnd = self.countY+BLOCK_SIZE
+        self.selectedTexture = HitemFrameTexture
+        self.standartTexture = itemFrameTexture
         self.countSymbs = []
         for y in range(self.countY,self.countYEnd):
             for x in range(self.countX,self.countXEnd):
@@ -636,12 +730,32 @@ class itemFrame(shape):
         self.writeInCount(stringHowMuch,1,1)
         self.writeInCount(stringWhat,0,3)
 
+    def clearCount(self):
+        for y in range(0,BLOCK_SIZE):
+            for x in range(0,BLOCK_SIZE):
+                findSymbByCoords(self.countX+x,self.countY+y).intensity = findInChars(0)
+
+    def clearItem(self):
+        self.item.destroy()
+        self.item = None
+        self.count = 0
+        self.clearCount()
+
+    def select(self,player):
+        self.texture = self.selectedTexture
+        player.selectedBlock = namesNClasses[self.item.name] if self.item is not None else None
+    
+    def deselect(self):
+        self.texture = self.standartTexture
+
 inventory.createFrames()
 
 class rectangle(shape):
     def __init__(self,x,y,width,height,texture):
         super().__init__(x,y,width,height,texture)
+        self.lists.append(colliders)
         colliders.append(self)
+
 
 
 class character(rectangle):
@@ -651,9 +765,14 @@ class character(rectangle):
         self.mineStrength = mineStrength
         self.fall = 0
         self.mineDistance = 2
+        self.placeDistance = 4
         self.isJumping = False
         self.jumpForce = 2
         self.jumpVelocity = 0
+        self.selectedBlock:block = None
+        self.selectedFrameIndex = 0
+        self.selectedFrame:itemFrame = inventory.itemFrames[self.selectedFrameIndex]
+        self.selectedFrame.select(self)
         self.grounded = False
         self.eyesX = self.x+4
         self.eyesY = self.y+2
@@ -697,7 +816,7 @@ class character(rectangle):
         changeFrame = False
         collisionObject = checkListCollision(self,colliders)
         finalY = self.y + self.fall
-        if 0 <= self.y + self.fall <= HEIGHT-self.height and collisionObject is None and not self.grounded:  
+        if collisionObject is None and not self.grounded:  
             while self.y < finalY:
                 self.y += 1
                 collisionObject = checkListCollision(self,colliders)
@@ -728,8 +847,11 @@ class character(rectangle):
         self.y -= self.jumpVelocity
         self.jumpVelocity -= 0.3
         collisionObject = checkListCollision(self,colliders)
+        self.updateSides()
+        
         if collisionObject is not None:
-            if self.jumpVelocity <= 0 and abs(self.bottom - collisionObject.top) < 2:
+            collisionObject.updateSides()
+            if self.jumpVelocity <= 0 and abs(self.bottom - collisionObject.top) < 4:
                 self.y = collisionObject.y-self.height
                 self.grounded = True
                 self.groundedObject = collisionObject
@@ -768,6 +890,10 @@ class character(rectangle):
         self.blockMining:block
         if self.blockMining.mineTime*(1/self.mineStrength) < self.timeMining:
             self.blockMining.mined()
+    def updateSelectedBlock(self):
+        self.selectedFrame:itemFrame = inventory.itemFrames[self.selectedFrameIndex]
+        self.selectedFrame.select(self)        
+
 
 class lightSource():
     def __init__(self,x,y,lightRange,descends,maxLuminosity,showOnStart = False):
@@ -846,10 +972,10 @@ class lightSource():
 class item(shape):
     def __init__(self, x, y, width, height, texture):
         super().__init__(x, y, width, height, texture)
+        self.lists.append(items)
         items.append(self)
     def onCollection(self):
-        objects.remove(self)
-        items.remove(self)
+        self.destroy()
 
 class lightItem(item):
     def __init__(self, x, y, width, height, texture,light):
@@ -859,7 +985,7 @@ class lightItem(item):
         player.aquireLight(self.light)
         super().onCollection()
 
-class block(shape):
+class block(rectangle):
     def __init__(self, gridX, gridY, texture,name:str,mineTime,darkVersion,brightVersion):
         self.name:str = name
         self.gridx = gridX
@@ -870,13 +996,15 @@ class block(shape):
         self.wasMined = False
         self.neighbours = []
         x,y = self.getCoordsFromGridCoords()
-        colliders.append(self)
         blocks.append(self)
         super().__init__(x, y, BLOCK_SIZE, BLOCK_SIZE, texture)
+        self.lists.append(blocks)
         self.standartVersion = self.texture
         self.updateNeighbours()
     def getCoordsFromGridCoords(self):
         return self.gridx * BLOCK_SIZE, self.gridy * BLOCK_SIZE
+    def getGridCoordsFromCoords(self,x,y):
+        return x // BLOCK_SIZE,y // BLOCK_SIZE
     @classmethod
     def findFromCoords(cls,pos):
         if not 0 <= pos[0] < GAME_WIDTH or not 0 <= pos[1] < HEIGHT:
@@ -905,6 +1033,8 @@ class block(shape):
         if self.wasMined:
             return
         
+
+        
         self.texture = self.standartVersion
         
         for neigh in self.neighbours:
@@ -915,8 +1045,16 @@ class block(shape):
         blocks.remove(self)
         self.wasMined = True
         inventory.add(self,1)
+        player.updateSelectedBlock()
         flickUpdateFrame()
+    
+    def copy(self):
+        newBlock:block = namesNClasses[self.name](self.gridx,self.gridy)
+        newBlock.wasMined = False
+        return newBlock
+    
 
+# block types
 class dirt(block):
     def __init__(self, gridx, gridy):
         super().__init__(gridx, gridy, dirtTexture, "dirt",0.4,darkDirtTexture,brightDirtTexture)
@@ -946,6 +1084,11 @@ loadLayout(mainLayout)
 
 prevHoverBlock = blocks[0]
 
+# STARTER PACK
+inventory.add(dirt(0,0),10)
+inventory.add(leaves(0,0),10)
+
+
 # OBJECTS:
 
 # light objects
@@ -954,8 +1097,18 @@ startLight = lightSource(0,0,5,1,14, True)
 bestLight = lightSource(0,0,48,1,MAX_INTENSITY)
 
 # player object
-player = character(7*BLOCK_SIZE,1*BLOCK_SIZE,6,10,characterTexture,1,1)
+player = character(7*BLOCK_SIZE,1*BLOCK_SIZE,6,10,characterTexture,1,10)
 
+
+
+
+
+# walls
+def passDraw():
+    pass
+topWall = rectangle(0,-10,WIDTH,10,createTextr(WIDTH,10,(0,0,0)))
+bottomWall = rectangle(0,HEIGHT,WIDTH,1,createTextr(WIDTH,1,(0,0,0)))
+topWall.draw = bottomWall.draw = passDraw
 
 # block types:
 cursor = shape.fromTexture(0,0,cursorTexture)
@@ -1014,7 +1167,8 @@ CONTROLS = {
 }
 
 MOUSE_CONTROLS = {
-    "left": MOUSE.onLeftClick
+    "left": MOUSE.onLeftClick,
+    "right": MOUSE.onRightClick
 }
 def control():
     for key in pressed.copy():

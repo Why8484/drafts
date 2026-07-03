@@ -78,6 +78,7 @@ while True:
             for filename in os.listdir(SCRIPT_DIR / folderPath):       
                 if filename.endswith((".png",".jpg")):    
                     previewImage(os.path.join(folderPath,filename))
+                    print("\n" + os.path.basename(filename) + "\n")
                 else:
                     continue
         except:
@@ -89,14 +90,17 @@ while True:
                 joinedFolderPath = os.path.join(subFolderPath,folder)
                 if joinedFolderPath.endswith((".png",".jpg")):
                     previewImage(joinedFolderPath)
+                    print("\n" + os.path.basename(joinedFolderPath) + "\n")
                     continue
                 for fileN in os.listdir(SCRIPT_DIR / joinedFolderPath):
                     previewImage(os.path.join(joinedFolderPath,fileN))
+                    print("\n" + os.path.basename(fileN) + "\n")
         except Exception as e:
             print(e)
     else:
         try:    
             previewImage(path)
+            print("\n" + os.path.basename(path) + "\n")
         except:
             pass
 

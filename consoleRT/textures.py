@@ -39,3 +39,14 @@ leavesT = loadTexture(r"txtrs/leaves/leaves.txt")
 brightWoodT = loadTexture(r"txtrs/wood/brightWood.txt")
 darkWoodT = loadTexture(r"txtrs/wood/darkWood.txt")
 woodT = loadTexture(r"txtrs/wood/wood.txt")
+
+
+# stones
+blackStoneT = loadTexture(r"txtrs/stone/blackStone.txt")
+blueStoneT = loadTexture(r"txtrs/stone/blueStone.txt")
+brightBlackStoneT = loadTexture(r"txtrs/stone/brightBlackStone.txt")
+brightBlueStoneT = loadTexture(r"txtrs/stone/brightBlueStone.txt")
+brightOrangeStoneT = loadTexture(r"txtrs/stone/brightOrangeStone.txt")
+brightWhiteStoneT = loadTexture(r"txtrs/stone/brightWhiteStone.txt")
+orangeStoneT = loadTexture(r"txtrs/stone/orangeStone.txt")
+whiteStoneT = loadTexture(r"txtrs/stone/whiteStone.txt")

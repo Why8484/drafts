@@ -3,7 +3,7 @@ import time
 import keyboard
 from keyboard._keyboard_event import KEY_DOWN,KEY_UP
 from math import ceil
-from layouts import mainLayout,boxLayout
+from layouts import *
 from pynput.mouse import *
 import pygetwindow
     
@@ -26,6 +26,11 @@ GRAVITY = 0.3
 updateFrame = True
 startGravity = True
 
+
+def chunks(lst, n):
+    """Yield successive n-sized chunks from lst."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
 
 def isBetween(val, min,max):
     if min < val < max:
@@ -525,7 +530,8 @@ class shape:
 def loadTextures():
     global grassTexture,darkDirtTexture,darkGrassTexture,characterTexture,brightDirtTexture,interfaceBGTexture
     global cursorTexture,darkWoodTexture,brightLeavesTexture,brightGrassTexture,itemFrameTexture,leavesTexture,woodTexture,darkLeavesTexture,brightWoodTexture
-    global dirtTexture,HitemFrameTexture
+    global dirtTexture,HitemFrameTexture,brightOrangeStoneTexture,brightWhiteStoneTexture,orangeStoneTexture,whiteStoneTexture
+    global blackStoneTexture,blueStoneTexture,brightBlackStoneTexture,brightBlueStoneTexture
     import textures
 
 
@@ -546,6 +552,16 @@ def loadTextures():
     grassTexture = texture(textures.grassT)
     brightWoodTexture = texture(textures.brightWoodT)
     darkGrassTexture = texture(textures.darkGrassT)
+    blackStoneTexture = texture(textures.blackStoneT)
+    blueStoneTexture = texture(textures.blueStoneT)
+    brightBlackStoneTexture = texture(textures.brightBlackStoneT)
+    brightBlueStoneTexture = texture(textures.brightBlueStoneT)
+    brightOrangeStoneTexture = texture(textures.brightOrangeStoneT)
+    brightWhiteStoneTexture = texture(textures.brightWhiteStoneT)
+    orangeStoneTexture = texture(textures.orangeStoneT)
+    whiteStoneTexture = texture(textures.whiteStoneT)
+
+
 
 
 
@@ -721,6 +737,13 @@ class itemFrame(shape):
     
     def writeInCount(self,text:str,fx:int,fy:int) -> None:
         textSplit = list(text)
+        if len(textSplit) > 6:
+            genOfLsts = chunks(textSplit,6)
+            for lst in genOfLsts:
+                for index,letter in enumerate(lst):
+                    findSymbByCoords(self.countX+fx+index,self.countY+fy).intensity = letter
+                fy += 1
+            return
         for index,letter in enumerate(textSplit):
             findSymbByCoords(self.countX+fx+index,self.countY+fy).intensity = letter
 
@@ -986,12 +1009,11 @@ class lightItem(item):
         super().onCollection()
 
 class block(rectangle):
-    def __init__(self, gridX, gridY, texture,name:str,mineTime,darkVersion,brightVersion):
+    def __init__(self, gridX, gridY, texture,name:str,mineTime,brightVersion):
         self.name:str = name
         self.gridx = gridX
         self.gridy = gridY
         self.mineTime = mineTime         
-        self.darkVersion = darkVersion
         self.brightVersion = brightVersion
         self.wasMined = False
         self.neighbours = []
@@ -1057,19 +1079,37 @@ class block(rectangle):
 # block types
 class dirt(block):
     def __init__(self, gridx, gridy):
-        super().__init__(gridx, gridy, dirtTexture, "dirt",0.4,darkDirtTexture,brightDirtTexture)
+        super().__init__(gridx, gridy, dirtTexture, "dirt",0.4,brightDirtTexture)
 
 class grass(block):
     def __init__(self, gridX, gridY):
-        super().__init__(gridX, gridY, grassTexture, "grass", 1,darkGrassTexture,brightGrassTexture)
+        super().__init__(gridX, gridY, grassTexture, "grass", 1,brightGrassTexture)
 
 class wood(block):
     def __init__(self, gridX, gridY):
-        super().__init__(gridX, gridY, woodTexture,"wood",2,darkWoodTexture,brightWoodTexture)
+        super().__init__(gridX, gridY, woodTexture,"wood",2,brightWoodTexture)
 
 class leaves(block):
     def __init__(self, gridX, gridY):
-        super().__init__(gridX, gridY, leavesTexture, "leaves", 0.1,darkLeavesTexture,brightLeavesTexture)
+        super().__init__(gridX, gridY, leavesTexture, "leaves", 0.1,brightLeavesTexture)
+
+class blackStone(block):
+    def __init__(self, gridX, gridY):
+        super().__init__(gridX, gridY, blackStoneTexture, "black stone", 5, brightBlackStoneTexture)
+
+class whiteStone(block):
+    def __init__(self, gridX, gridY):
+        super().__init__(gridX, gridY, whiteStoneTexture, "white stone", 4, brightWhiteStoneTexture)
+
+class blueStone(block):
+    def __init__(self, gridX, gridY):
+        super().__init__(gridX, gridY, blueStoneTexture, "blue stone", 7, brightBlueStoneTexture)
+
+class orangeStone(block):
+    def __init__(self, gridX, gridY):
+        super().__init__(gridX, gridY, orangeStoneTexture, "orange stone", 6, brightOrangeStoneTexture)
+
+
     
 
 # load textures
@@ -1078,15 +1118,26 @@ namesNClasses = {
     "dirt": dirt,
     "grass": grass,
     "wood": wood,
-    "leaves": leaves
+    "leaves": leaves,
+    "black stone": blackStone,
+    "blue stone": blueStone,
+    "orange stone": orangeStone,
+    "white stone": whiteStone,
 }
-loadLayout(mainLayout)
+loadLayout(sandbox)
 
 prevHoverBlock = blocks[0]
 
 # STARTER PACK
-inventory.add(dirt(0,0),10)
-inventory.add(leaves(0,0),10)
+inventory.add(dirt(0,0),20)
+inventory.add(leaves(0,0),20)
+inventory.add(wood(0,0),20)
+inventory.add(blackStone(0,0),20)
+inventory.add(blueStone(0,0),20)
+inventory.add(orangeStone(0,0),20)
+inventory.add(whiteStone(0,0),20)
+inventory.add(grass(0,0),20)
+
 
 
 # OBJECTS:
@@ -1097,7 +1148,7 @@ startLight = lightSource(0,0,5,1,14, True)
 bestLight = lightSource(0,0,48,1,MAX_INTENSITY)
 
 # player object
-player = character(7*BLOCK_SIZE,1*BLOCK_SIZE,6,10,characterTexture,1,10)
+player = character(0,0,6,10,characterTexture,1,1)
 
 
 

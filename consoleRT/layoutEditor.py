@@ -1,5 +1,6 @@
 # Example file showing a basic pygame "game loop"
 import pygame
+import ast
 
 # pygame setup
 pygame.init()
@@ -35,11 +36,16 @@ def getBlockFromPos(gx,gy):
                 bl.name = "air"
             return bl.name
 
-dirtImage = loadImage(r"sprites\dirt.png")
-grassImage = loadImage(r"sprites\grass.png")
-woodImage = loadImage(r"sprites\wood.png")
-leavesImage = loadImage(r"sprites\leaves.png")
+dirtImage = loadImage(r"sprites\dirt\dirt.png")
+grassImage = loadImage(r"sprites\grass\grass.png")
+woodImage = loadImage(r"sprites\wood\wood.png")
+leavesImage = loadImage(r"sprites\leaves\leaves.png")
 eraseImage = loadImage(r"sprites\erase.png")
+blackStone = loadImage(r"sprites\stone\blackStone.png")
+blueStone = loadImage(r"sprites\stone\blueStone.png")
+orangeStone = loadImage(r"sprites\stone\orangeStone.png")
+whiteStone = loadImage(r"sprites\stone\whiteStone.png")
+
 
 printList = []
 
@@ -47,8 +53,14 @@ dct = {
     dirtImage: "dirt",
     grassImage: "grass",
     woodImage: "wood",
-    leavesImage: "leaves"
+    leavesImage: "leaves",
+    blueStone: "blue stone",
+    orangeStone: "orange stone",
+    whiteStone: "white stone",
+    blackStone: "black stone",
 }
+
+reverseDct = {v:k for k,v in dct.items()}
 
 class block:
     def __init__(self,x,y,width,height,img):
@@ -76,13 +88,18 @@ class button(block):
     def onPress(self):
         global following,isErasing
 
+
         isErasing = False
         following = block(pos[0],pos[1],cellSize,cellSize,self.img)
 
-dirtButton = button(1280-60,0,cellSize,cellSize,dirtImage)
-grassButton = button(1280-60,100,cellSize,cellSize,grassImage)
-woodButton = button(1280-60,200,cellSize,cellSize,woodImage)
-leavesButton = button(1280-60,300,cellSize,cellSize,leavesImage)
+i = 0
+for img,name in dct.items():
+    button(1280-60,i,cellSize,cellSize,img)
+    i += 100
+# dirtButton = button(1280-60,0,cellSize,cellSize,dirtImage)
+# grassButton = button(1280-60,100,cellSize,cellSize,grassImage)
+# woodButton = button(1280-60,200,cellSize,cellSize,woodImage)
+# leavesButton = button(1280-60,300,cellSize,cellSize,leavesImage)
 
 def write(text,x,y):
     surf = font.render(text,True,"black")
@@ -100,11 +117,11 @@ for w in range(1,17):
 lines.append((60*17,0,60*17,720))
     
 
-def erase_():
+def erase_(NoErasers = []):
     global pos
 
     for bl in blocks:
-        if bl.getRect().collidepoint(pos[0],pos[1]):
+        if bl.getRect().collidepoint(pos[0],pos[1]) and bl not in NoErasers:
             blocks.remove(bl)
             entities.remove(bl)
             del bl
@@ -118,6 +135,7 @@ def eraseOnPress():
 eraseButton = button(1280-60,720-60,cellSize,cellSize,eraseImage)
 eraseButton.onPress = eraseOnPress
 
+canScrollAgain = True
 
 while running:
     # poll for events
@@ -127,7 +145,7 @@ while running:
             running = False
     
     pos = pygame.mouse.get_pos()
-    mouse = pygame.mouse.get_pressed()
+    mouse = pygame.mouse.get_pressed(5)
     keys = pygame.key.get_pressed()
 
     # fill the screen with a color to wipe away anything from last frame
@@ -137,6 +155,7 @@ while running:
         if isErasing:
             erase_()
         if following is not None:
+            erase_([following])
             following = None
 
         for b in buttons:
@@ -148,6 +167,7 @@ while running:
         if isErasing:
             erase_()
         if following is not None:
+            erase_([following])
             following = block(following.x,following.y,following.width,following.height,following.img)
     if mouse[2]:
         x,y = pos
@@ -158,8 +178,8 @@ while running:
         drawingRect = True
     elif not mouse[2] and drawingRect:
         xe,ye = pos
-        xe = xe//cellSize*cellSize
-        ye = ye//cellSize*cellSize
+        xe = xe //cellSize*cellSize
+        ye = ye //cellSize*cellSize
         rectEnd = [xe,ye]
         following = None
         drawingRect = False
@@ -170,6 +190,28 @@ while running:
         for sy in range(rectStart[1],rectEnd[1],cellSize):
             for sx in range(rectStart[0],rectEnd[0],cellSize):
                 block(sx,sy,cellSize,cellSize,lastButton.img)
+    
+    if mouse[4] and canScrollAgain:
+        for bl in blocks[:]:
+            if not 0 < bl.x < 16*cellSize and not 0 < bl.y < 8*cellSize:
+                blocks.remove(bl)
+        for b in buttons:
+            b.y -= 500
+            canScrollAgain = False
+            eraseButton.y = 720-60
+    
+    if mouse[3] and canScrollAgain:
+        for bl in blocks[:]:
+            if not 0 < bl.x < 16*cellSize and not 0 < bl.y < 8*cellSize:
+                blocks.remove(bl)
+        for b in buttons:
+            b.y += 500
+            canScrollAgain = False
+            eraseButton.y = 720-60
+    
+    if not any(mouse):
+        canScrollAgain = True
+
     
     if keys[pygame.K_c]:
         if following is not None:
@@ -188,6 +230,13 @@ while running:
         with open("layout","w") as l:
             l.write(str(printList))
         canPrint = False
+    if keys[pygame.K_l]:
+        layout = ast.literal_eval(input("paste layout: "))
+        print(layout)
+        for i,bl in enumerate(layout):
+            if bl is not None:
+                block(divmod(i,16)[1]+cellSize,divmod(i,16)[0],cellSize,cellSize,reverseDct[bl])
+
     
     if not any(keys):
         canPrint = True

@@ -41,10 +41,10 @@ grassImage = loadImage(r"sprites\grass\grass.png")
 woodImage = loadImage(r"sprites\wood\wood.png")
 leavesImage = loadImage(r"sprites\leaves\leaves.png")
 eraseImage = loadImage(r"sprites\erase.png")
-blackStone = loadImage(r"sprites\stone\blackStone.png")
-blueStone = loadImage(r"sprites\stone\blueStone.png")
-orangeStone = loadImage(r"sprites\stone\orangeStone.png")
-whiteStone = loadImage(r"sprites\stone\whiteStone.png")
+stone = loadImage(r"sprites\stone\stone.png")
+coal = loadImage(r"sprites\stone\coal.png")
+iron = loadImage(r"sprites\stone\iron.png")
+quartz = loadImage(r"sprites\stone\quartz.png")
 
 
 printList = []
@@ -54,10 +54,10 @@ dct = {
     grassImage: "grass",
     woodImage: "wood",
     leavesImage: "leaves",
-    blueStone: "blue stone",
-    orangeStone: "orange stone",
-    whiteStone: "white stone",
-    blackStone: "black stone",
+    coal: "coal",
+    iron: "iron",
+    quartz: "quartz",
+    stone: "stone",
 }
 
 reverseDct = {v:k for k,v in dct.items()}

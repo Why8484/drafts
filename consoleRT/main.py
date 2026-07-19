@@ -530,8 +530,8 @@ class shape:
 def loadTextures():
     global grassTexture,darkDirtTexture,darkGrassTexture,characterTexture,brightDirtTexture,interfaceBGTexture
     global cursorTexture,darkWoodTexture,brightLeavesTexture,brightGrassTexture,itemFrameTexture,leavesTexture,woodTexture,darkLeavesTexture,brightWoodTexture
-    global dirtTexture,HitemFrameTexture,brightOrangeStoneTexture,brightWhiteStoneTexture,orangeStoneTexture,whiteStoneTexture
-    global blackStoneTexture,blueStoneTexture,brightBlackStoneTexture,brightBlueStoneTexture
+    global dirtTexture,HitemFrameTexture,brightIronTexture,brightQuartzTexture,ironTexture,quartzTexture
+    global stoneTexture,coalTexture,brightStoneTexture,brightCoalTexture
     import textures
 
 
@@ -552,14 +552,14 @@ def loadTextures():
     grassTexture = texture(textures.grassT)
     brightWoodTexture = texture(textures.brightWoodT)
     darkGrassTexture = texture(textures.darkGrassT)
-    blackStoneTexture = texture(textures.blackStoneT)
-    blueStoneTexture = texture(textures.blueStoneT)
-    brightBlackStoneTexture = texture(textures.brightBlackStoneT)
-    brightBlueStoneTexture = texture(textures.brightBlueStoneT)
-    brightOrangeStoneTexture = texture(textures.brightOrangeStoneT)
-    brightWhiteStoneTexture = texture(textures.brightWhiteStoneT)
-    orangeStoneTexture = texture(textures.orangeStoneT)
-    whiteStoneTexture = texture(textures.whiteStoneT)
+    stoneTexture = texture(textures.stoneT)
+    coalTexture = texture(textures.coalT)
+    brightStoneTexture = texture(textures.brightStoneT)
+    brightCoalTexture = texture(textures.brightCoalT)
+    brightIronTexture = texture(textures.brightIronT)
+    brightQuartzTexture = texture(textures.brightQuartzT)
+    ironTexture = texture(textures.ironT)
+    quartzTexture = texture(textures.quartzT)
 
 
 
@@ -1093,21 +1093,21 @@ class leaves(block):
     def __init__(self, gridX, gridY):
         super().__init__(gridX, gridY, leavesTexture, "leaves", 0.1,brightLeavesTexture)
 
-class blackStone(block):
+class stone(block):
     def __init__(self, gridX, gridY):
-        super().__init__(gridX, gridY, blackStoneTexture, "black stone", 5, brightBlackStoneTexture)
+        super().__init__(gridX, gridY, stoneTexture, "stone", 5, brightStoneTexture)
 
-class whiteStone(block):
+class quartz(block):
     def __init__(self, gridX, gridY):
-        super().__init__(gridX, gridY, whiteStoneTexture, "white stone", 4, brightWhiteStoneTexture)
+        super().__init__(gridX, gridY, quartzTexture, "quartz", 4, brightQuartzTexture)
 
-class blueStone(block):
+class coal(block):
     def __init__(self, gridX, gridY):
-        super().__init__(gridX, gridY, blueStoneTexture, "blue stone", 7, brightBlueStoneTexture)
+        super().__init__(gridX, gridY, coalTexture, "coal", 7, brightCoalTexture)
 
-class orangeStone(block):
+class iron(block):
     def __init__(self, gridX, gridY):
-        super().__init__(gridX, gridY, orangeStoneTexture, "orange stone", 6, brightOrangeStoneTexture)
+        super().__init__(gridX, gridY, ironTexture, "iron", 6, brightIronTexture)
 
 
     
@@ -1119,10 +1119,10 @@ namesNClasses = {
     "grass": grass,
     "wood": wood,
     "leaves": leaves,
-    "black stone": blackStone,
-    "blue stone": blueStone,
-    "orange stone": orangeStone,
-    "white stone": whiteStone,
+    "stone": stone,
+    "coal": coal,
+    "iron": iron,
+    "quartz": quartz,
 }
 loadLayout(sandbox)
 
@@ -1132,10 +1132,10 @@ prevHoverBlock = blocks[0]
 inventory.add(dirt(0,0),20)
 inventory.add(leaves(0,0),20)
 inventory.add(wood(0,0),20)
-inventory.add(blackStone(0,0),20)
-inventory.add(blueStone(0,0),20)
-inventory.add(orangeStone(0,0),20)
-inventory.add(whiteStone(0,0),20)
+inventory.add(stone(0,0),20)
+inventory.add(coal(0,0),20)
+inventory.add(iron(0,0),20)
+inventory.add(quartz(0,0),20)
 inventory.add(grass(0,0),20)
 
 

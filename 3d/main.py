@@ -9,6 +9,7 @@ WIDTH = 900
 HEIGHT = 900
 display = pygame.display.set_mode((WIDTH,HEIGHT))
 screen = pygame.Surface((WIDTH,HEIGHT-350))
+pygame.display.set_caption("3D space")
 clock = pygame.time.Clock()
 running = True
 font = pygame.font.SysFont("comicsansms",44)
@@ -519,7 +520,7 @@ def placeObjects():
     global selectedObject
 
     # cube((0.2,0.2,1),0.2)
-    selectedObject = sphere(0.1,(0.1,0.1,0.5),10)
+    selectedObject = sphere(0.1,(0.1,0.1,0.5),32)
     # circle((0.1,0.1,2),12,12)
 
 placeObjects()

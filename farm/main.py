@@ -106,6 +106,11 @@ sellAllButtonImage = loadImage("sellAllButton.png")
 highlightFrameImage = loadImage("highlightFrame.png")
 coinImage = loadImage("coin.png")
 backButtonImage = loadImage("backButton.png")
+sellableIndicatorImage = loadImage("sellIndicator.png")
+buyableIndicatorImage = loadImage("buyIndicator.png")
+buy1Image = loadImage("buy1.png")
+buyCustomImage = loadImage("buyCustom.png")
+buyMaxImage = loadImage("buyMax.png")
 
 def createDefaultImage(w,h,col1,col2):
     """Creates a default image: 2x2 grid of squares of two colors.
@@ -423,11 +428,13 @@ class sellPanelObject(entity):
 
 class sellPanelItem(sellPanelObject):
     """Class for sellable items in sell panel. List: sellPanelItems."""
-    def __init__(self, x, y, name, normalItem, layer=0, width=0, height=0, image=None):
+    def __init__(self, x, y, name, normalItem, sellable=True, buyable=False, layer=0, width=0, height=0, image=None):
         super().__init__(x, y, layer, width, height, image)
         self.selected = False
         self.name = name
         self.item = normalItem
+        self.sellable = sellable
+        self.buyable = buyable
         sellPanelItems.append(self)
     def select(self):
         """select this item as the selectedSellable."""
@@ -436,6 +443,13 @@ class sellPanelItem(sellPanelObject):
         self.selected = True
         selectedSellableItem = self
         highlightFrame.x,highlightFrame.y = self.x-5,self.y-5
+    def draw(self):
+        super().draw()
+        if self.sellable:
+            sellPanel.blit(sellableIndicatorImage, (self.x + self.width - 10,self.y))
+        if self.buyable:
+            sellPanel.blit(buyableIndicatorImage, (self.x + self.width - 20,self.y))
+            
 
 class sellPanelButton(sellPanelObject):
     """Class for buttons like sellAll,sell1 etc. List: sellPanelButtons."""
@@ -463,48 +477,91 @@ field1 = field(1,1)
 farmer = entity(1200,360,image=farmerImage)
 
 # sell panel things
-sellPanelItem(100,100,"wheat bundle",wheatBundle, image=wheatBundleImage) # wheat
-sellPanelItem(200,100,"wheat seeds",wheatSeeds, image=wheatSeedsImage) # seeds
+sellPanelItem(60,100,"wheat bundle",wheatBundle, image=wheatBundleImage) # wheat
+sellPanelItem(160,100,"wheat seeds",wheatSeeds, image=wheatSeedsImage, buyable=True) # seeds
 lineSurf = pygame.Surface((10,720))
 pygame.draw.line(lineSurf,"black",(5,0),(5,720),10)
 sellPanelObject(640,0,image=lineSurf)
+def sellCheck():
+    global selectedSellableItem
+
+    if selectedSellableItem is None:
+        return False
+    
+    if selectedSellableItem.item not in inventory.items:
+        return False
+
+    if not selectedSellableItem.sellable:
+        return False
+
+    return True
+
+def buyCheck(amt=1):
+    global selectedSellableItem
+
+    amt = int(amt)
+
+    if selectedSellableItem is None:
+        return False
+    if inventory.coins < BUY_PANEL_PRICE_LIST[selectedSellableItem.name]*amt:
+        return False
+    if not selectedSellableItem.buyable:
+        return False
+
+    return True
+
 def sell1():
     global selectedSellableItem
 
-    if selectedSellableItem == None:
-        return
-    
-    if selectedSellableItem.item not in inventory.items:
+    if not sellCheck():
         return
     
     inventory.coins += SELL_PANEL_PRICE_LIST[selectedSellableItem.name]
     inventory.remove(selectedSellableItem.item)
 
+def buy1():
+    global selectedSellableItem
+
+    if not buyCheck():
+        return
+
+    inventory.coins -= BUY_PANEL_PRICE_LIST[selectedSellableItem.name]
+    inventory.add(selectedSellableItem.item,1)
+
+
 def sellAll():
     global selectedSellableItem
 
-    if selectedSellableItem is None:
-        return
-
-    if selectedSellableItem.item not in inventory.items:
+    if not sellCheck():
         return
 
     inventory.coins += SELL_PANEL_PRICE_LIST[selectedSellableItem.name]*(inventory.items[selectedSellableItem.item]-1)
     inventory.items[selectedSellableItem.item] = 1
     inventory.popFromItems(selectedSellableItem.item)
 
-def sellCustom():
-    global selectedSellableItem,actionOnInputEnd,inputValue
+def buyMax():
+    global selectedSellableItem
 
-    if selectedSellableItem is None:
+    if selectedSellableItem not in BUY_PANEL_PRICE_LIST:
+        return False
+
+    maxAmount = inventory.coins//BUY_PANEL_PRICE_LIST[selectedSellableItem.name]
+    
+    if not buyCheck(maxAmount):
         return
 
-    if selectedSellableItem.item not in inventory.items:
-        return 
+    inventory.coins -= BUY_PANEL_PRICE_LIST[selectedSellableItem.name]*maxAmount
+    inventory.add(selectedSellableItem.item,maxAmount)
+
+def sellCustom():
+    global selectedSellableItem,actionOnInputEnd,inputValue
 
     def sellCutsomAmt(amt):
         global actionOnInputEnd,inputValue
 
+        if not sellCheck():
+            return
+        
         amt = int(amt)
         if inventory.items[selectedSellableItem.item] < amt:
             return
@@ -514,21 +571,48 @@ def sellCustom():
         actionOnInputEnd = None
 
     actionOnInputEnd = sellCutsomAmt
-    inputValue = "0"
+    inputValue = "-"
+
+def buyCustom():
+    global actionOnInputEnd,inputValue
+
+    def buyCustomAmt(amt):
+        global actionOnInputEnd
+
+        if not buyCheck(amt):
+            return
+
+        amt = int(amt)
+        inventory.coins -= BUY_PANEL_PRICE_LIST[selectedSellableItem.name]*amt
+        inventory.add(selectedSellableItem.item, amt)
+        actionOnInputEnd = None
+
+    actionOnInputEnd = buyCustomAmt
+    inputValue = "-"
 
 
-
-sell1Button = sellPanelButton(60,400,image=sell1ButtonImage)
-sellAllButton = sellPanelButton(224,400,image=sellAllButtonImage)
-sellCustomButton = sellPanelButton(388,400,image=sellCustomButtonImage)
+# buttons
+sell1Button = sellPanelButton(60,380,image=sell1ButtonImage)
+sellAllButton = sellPanelButton(224,380,image=sellAllButtonImage)
+sellCustomButton = sellPanelButton(388,380,image=sellCustomButtonImage)
+buy1Button = sellPanelButton(60,476, image=buy1Image)
+buyCustomButton = sellPanelButton(224,476, image=buyCustomImage)
+buyMaxButton = sellPanelButton(388, 476, image=buyMaxImage)
 backButton = sellPanelButton(0,0,image=backButtonImage)
 sell1Button.action = sell1
 sellAllButton.action = sellAll
 sellCustomButton.action = sellCustom
+buy1Button.action = buy1
+buyCustomButton.action = buyCustom
+buyMaxButton.action = buyMax
+
 highlightFrame = sellPanelObject(-950,-950,layer=-1,image=highlightFrameImage)
 SELL_PANEL_PRICE_LIST = {
     "wheat bundle": 15,
     "wheat seeds": 1
+}
+BUY_PANEL_PRICE_LIST = {
+    "wheat seeds": 1,
 }
 
 # create walls of the screen
@@ -643,7 +727,7 @@ def control():
     if actionOnInputEnd is not None and canTypeAgain:
         for key,num in NUMBERS.items():
             if keys[key]:
-                if inputValue == "0":
+                if inputValue == "-":
                     inputValue = str(num)
                     canTypeAgain = False
                     break

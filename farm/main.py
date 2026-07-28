@@ -8,8 +8,8 @@ pygame.init()
 HEIGHT = 720
 WIDTH = 1280
 screen = pygame.display.set_mode((WIDTH,HEIGHT))
-invPanel = pygame.Surface((WIDTH, HEIGHT//5))
-sellPanel = pygame.Surface((WIDTH,HEIGHT*(4/5)))
+invPanel = pygame.Surface((WIDTH, 160))
+sellPanel = pygame.Surface((WIDTH,560))
 sellPanelOpened = False
 clock = pygame.time.Clock()
 pygame.display.set_caption("farm")
@@ -23,11 +23,13 @@ bigFont = pygame.font.SysFont("comicsansms",44)
 running = True
 updateFrame = True
 selectedSellableItem = None
+newFarmlandCreated = False
 canPressAgain = True
 inputValue = ""
 typingPosition = 780,100
 actionOnInputEnd = None
 canTypeAgain = True
+selectedInvSlot = None
 
 def renderText(text:str,color):
     """Returns a surface of rendered text."""
@@ -134,12 +136,25 @@ def createDefaultImage(w,h,col1,col2):
 def findAreaByGridCoords(gx,gy):
     """Finds an area object that overlaps coords given.
     Params:
-        x and y: coords.
+        gx and gy: coords.
     Returns:
         area object that overlaps given coords."""
 
     return areas[gy*GRID_WIDTH+gx]
 
+def findAreaByCoords(x,y):
+    """Finds an area object that overlaps coords given.
+    Params:
+        x and y: coords.
+    Returns:
+        area object that overlaps given coords."""
+
+    gx = x//BLOCK_SIZE
+    gy = y//BLOCK_SIZE
+
+    return areas[gy*GRID_WIDTH+gx]
+
+    
 def findFieldByCoords(x,y):
     """Finds an field object that overlaps coords given.
     Params:
@@ -300,7 +315,7 @@ class wheat(entity):
         self.timePlanted = 0
         x,y = field.x,field.y-40
         self.phase = 0
-        self.growthTime = [1,1,1]
+        self.growthTime = [random.randint(8,12),random.randint(11,19),random.randint(7,19),random.randint(19,25)]
         super().__init__(x,y, 1, BLOCK_SIZE, BLOCK_SIZE, self.growthSequence[self.phase])
         plants.append(self)
     def increaseTimePlanted(self):
@@ -330,7 +345,9 @@ class wheat(entity):
             case 2:
                 inventory.add(wheatSeeds, rollFromChance({1: 50, 2: 35, 3: 15}))
             case 3:
-                inventory.add(wheatSeeds, rollFromChance({2: 70, 3: 30}))
+                inventory.add(wheatSeeds, rollFromChance({2: 100}))
+            case 4:
+                inventory.add(wheatSeeds, rollFromChance({2: 60, 3: 35, 4:5}))
                 inventory.add(wheatBundle, 1)
 
 class inventory:
@@ -362,12 +379,14 @@ class inventory:
     @classmethod
     def draw(cls):
         """Draws every item in self.items."""
+        invPanel.blit(highlightFrameImage,(selectedInvSlot.x-5,selectedInvSlot.y-5))
         for i,count in cls.items.items():
             i.draw(i.slot.x,i.slot.y)
-            invPanel.blit(renderText("x"+str(count),"black"),(i.slot.x+BLOCK_SIZE/2,BLOCK_SIZE+i.title.get_height()))
+            invPanel.blit(renderText("x"+str(count),"black"),(i.slot.x+BLOCK_SIZE/2,i.slot.y+BLOCK_SIZE+i.title.get_height()))
 
         invPanel.blit(coinImage,(1080,invPanel.get_height()-90))
         invPanel.blit(renderBigText(str(displayCoinsAmount()),"black"),(1165,invPanel.get_height()-60))
+
 
     @classmethod
     def remove(cls,item):
@@ -410,6 +429,9 @@ class slot:
         self.y = y
         self.item = None
         slots.append(self)
+
+    def getRect(self):
+        return pygame.Rect(self.x,self.y+560,BLOCK_SIZE,BLOCK_SIZE)
 
     @classmethod
     def findNextEmpty(cls):
@@ -461,10 +483,11 @@ class sellPanelButton(sellPanelObject):
 
 # create slots
 for x in range(40,1280,200):
-    slot(x,0)
+    slot(x,10)
 
 wheatSeeds = item(wheatSeedsImage,"wheat seeds")
 wheatBundle = item(wheatBundleImage, "wheat bundle")
+farmland = item(soilImage, "farmland")
 
 # create a grid of area obbjects:
 for gy in range(GRID_HEIGHT):
@@ -477,8 +500,9 @@ field1 = field(1,1)
 farmer = entity(1200,360,image=farmerImage)
 
 # sell panel things
-sellPanelItem(60,100,"wheat bundle",wheatBundle, image=wheatBundleImage) # wheat
-sellPanelItem(160,100,"wheat seeds",wheatSeeds, image=wheatSeedsImage, buyable=True) # seeds
+sellPanelItem(60,80,"wheat bundle",wheatBundle, image=wheatBundleImage) # wheat
+sellPanelItem(160,80,"wheat seeds",wheatSeeds, image=wheatSeedsImage, buyable=True) # seeds
+sellPanelItem(260,80,"farmland", farmland, image=soilImage, buyable=True, sellable=False) # farmland
 lineSurf = pygame.Surface((10,720))
 pygame.draw.line(lineSurf,"black",(5,0),(5,720),10)
 sellPanelObject(640,0,image=lineSurf)
@@ -542,7 +566,7 @@ def sellAll():
 def buyMax():
     global selectedSellableItem
 
-    if selectedSellableItem not in BUY_PANEL_PRICE_LIST:
+    if selectedSellableItem.name not in BUY_PANEL_PRICE_LIST.keys():
         return False
 
     maxAmount = inventory.coins//BUY_PANEL_PRICE_LIST[selectedSellableItem.name]
@@ -592,12 +616,12 @@ def buyCustom():
 
 
 # buttons
-sell1Button = sellPanelButton(60,380,image=sell1ButtonImage)
-sellAllButton = sellPanelButton(224,380,image=sellAllButtonImage)
-sellCustomButton = sellPanelButton(388,380,image=sellCustomButtonImage)
-buy1Button = sellPanelButton(60,476, image=buy1Image)
-buyCustomButton = sellPanelButton(224,476, image=buyCustomImage)
-buyMaxButton = sellPanelButton(388, 476, image=buyMaxImage)
+sell1Button = sellPanelButton(60,560-192,image=sell1ButtonImage)
+sellAllButton = sellPanelButton(224,560-192,image=sellAllButtonImage)
+sellCustomButton = sellPanelButton(388,560-192,image=sellCustomButtonImage)
+buy1Button = sellPanelButton(60,560-96, image=buy1Image)
+buyCustomButton = sellPanelButton(224,560-96, image=buyCustomImage)
+buyMaxButton = sellPanelButton(388, 560-96, image=buyMaxImage)
 backButton = sellPanelButton(0,0,image=backButtonImage)
 sell1Button.action = sell1
 sellAllButton.action = sellAll
@@ -609,10 +633,11 @@ buyMaxButton.action = buyMax
 highlightFrame = sellPanelObject(-950,-950,layer=-1,image=highlightFrameImage)
 SELL_PANEL_PRICE_LIST = {
     "wheat bundle": 15,
-    "wheat seeds": 1
+    "wheat seeds": 1,
 }
 BUY_PANEL_PRICE_LIST = {
     "wheat seeds": 1,
+    "farmland": 50,
 }
 
 # create walls of the screen
@@ -643,43 +668,59 @@ def flickUpdateFrame():
     global updateFrame
     updateFrame = True
 
-def breakPlant(mousex,mousey):
+def breakPlant(field):
     """Breaks the plant, mouse is hovering on."""
-    hoverField = findFieldByCoords(mousex,mousey)
-    if hoverField is None:
+    if field is None:
         return
-    if hoverField.plant is None:
+    if field.plant is None:
         return
-    hoverField.plant.breakMyself()
+    field.plant.breakMyself()
     flickUpdateFrame()
 
-def placePlant(mousex,mousey):
+def placePlant(field):
     """"Places the plant where the mouse is pointing."""
-    hoverField = findFieldByCoords(mousex,mousey)
-    if hoverField is None:
+
+    if field is None:
         return 
 
-    if hoverField.plant is not None:
+    if field.plant is not None:
         return
 
     if inventory.remove(wheatSeeds):
-        wheat(hoverField)
+        wheat(field)
     flickUpdateFrame()
 
 def mouseControl():
     """Covers everything that is activated with mouse."""
-    global canPressAgain
+    global canPressAgain,newFarmlandCreated,selectedInvSlot
 
     mouse = pygame.mouse.get_pressed()
     mousex,mousey = pygame.mouse.get_pos()
 
     if mouse[2] and 0 < mousex < WIDTH and 0 < mousey < HEIGHT:
         if not sellPanelOpened:
-            placePlant(mousex,mousey)
+            hoverField = findFieldByCoords(mousex,mousey)
+            if hoverField is None and farmland in inventory.items and selectedInvSlot == farmland.slot:
+                fieldx,fieldy = mousex//BLOCK_SIZE,mousey//BLOCK_SIZE
+                if 0 <= fieldx <= 12 and 0 <= fieldy <= 6:
+                    field(fieldx,fieldy)
+                    inventory.remove(farmland)
+                    newFarmlandCreated = True
+            elif not newFarmlandCreated and selectedInvSlot == wheatSeeds.slot:
+                placePlant(hoverField)
     if mouse[0] and 0 < mousex < WIDTH and 0 < mousey < HEIGHT:
+        if 0 < mousex < WIDTH and 560 < mousey < HEIGHT:
+            # in inv panel
+            for s in slots:
+                s:slot
+                if s.getRect().collidepoint((mousex,mousey)):
+                    selectedInvSlot = s
         if not sellPanelOpened:
-            breakPlant(mousex,mousey)
+            # in screen
+            hoverField = findFieldByCoords(mousex,mousey)
+            breakPlant(hoverField)
         else:
+            # in sell panel
             for i in sellPanelItems:
                 i:sellPanelItem
                 if i.getRect().collidepoint(mousex,mousey):
@@ -699,6 +740,7 @@ def mouseControl():
 
     if not any(mouse):
         canPressAgain = True
+        newFarmlandCreated = False
 
 def showSellPanel():
     """Shows the 'sell and buy' panel."""
@@ -724,6 +766,7 @@ def control():
         if keys[k]:
             action()
 
+    # input
     if actionOnInputEnd is not None and canTypeAgain:
         for key,num in NUMBERS.items():
             if keys[key]:
@@ -745,6 +788,7 @@ def control():
             inputValue = inputValue[:-1]
             canTypeAgain = False
 
+    # reset can type again
     if not any(keys):
         canTypeAgain = True
 
@@ -783,15 +827,15 @@ def render():
             sellPanel.blit(renderBigText(inputValue, "white"),typingPosition)
         screen.blit(sellPanel,(0,0))
 
-
-
 def update():
     for pl in plants:
         pl:wheat
         pl.increaseTimePlanted()
 
-inventory.add(wheatSeeds,1000)
-inventory.add(wheatBundle,1000)
+inventory.add(wheatSeeds,10)
+inventory.add(farmland,10)
+inventory.add(wheatBundle,10)
+selectedInvSlot = list(inventory.items.keys())[0].slot
 screen.fill("white")
 while running:
     for event in pygame.event.get():

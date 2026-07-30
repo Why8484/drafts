@@ -18,8 +18,8 @@ MAX_FPS = 120
 BLOCK_SIZE = 80
 GRID_WIDTH = int(WIDTH/BLOCK_SIZE) #16
 GRID_HEIGHT = int(HEIGHT/BLOCK_SIZE)  #9
-font = pygame.font.SysFont("comicsansms",22)
-bigFont = pygame.font.SysFont("comicsansms",44)
+font = pygame.font.Font(r"assets\font.ttf",22)
+bigFont = pygame.font.SysFont(r"assets\font.ttf",44)
 running = True
 updateFrame = True
 selectedSellableItem = None
@@ -30,6 +30,7 @@ typingPosition = 780,100
 actionOnInputEnd = None
 canTypeAgain = True
 selectedInvSlot = None
+justExited = False
 
 def renderText(text:str,color):
     """Returns a surface of rendered text."""
@@ -80,7 +81,7 @@ def loadImage(path,join=True):
     return pygame.image.load(joinedPath).convert_alpha()
 
 def loadFromFolder(folderPath):
-    """Loads all images from folder skipping the fikles that are not images.
+    """Loads all images from folder skipping the fikles that are not images. And sor6ts them by name if name is 0.png, 9.png etc.
     Params:
         folderPath: path of the folder.
     Returns:
@@ -91,9 +92,14 @@ def loadFromFolder(folderPath):
     for fileName in os.listdir(joindeFolderPath):
         joinedPath = os.path.join(joindeFolderPath,fileName)
         if joinedPath.endswith((".png",".jpg","jpeg")):
-            imageSequence.append((loadImage(joinedPath,False)))
+            imageSequence.append(((loadImage(joinedPath,False)),int(fileName.removesuffix(".png"))))
 
-    return imageSequence
+    imageSequence.sort(key=lambda x: x[1])
+    returnSequence = []
+    for surf,fn in imageSequence:
+        returnSequence.append(surf)
+
+    return returnSequence
 
 mountain = loadImage("mountain.jpg")
 playerImage = loadImage("player.png")
@@ -113,6 +119,11 @@ buyableIndicatorImage = loadImage("buyIndicator.png")
 buy1Image = loadImage("buy1.png")
 buyCustomImage = loadImage("buyCustom.png")
 buyMaxImage = loadImage("buyMax.png")
+woodAshImage = loadImage("woodAsh.png")
+fertilizedSoilImage = loadImage("fertilizedSoil.png")
+millstoneImage = loadImage("millstoneFull.png")
+progressBarSequence = loadFromFolder("progressBar")
+flourImage = loadImage("flour.png")
 
 def createDefaultImage(w,h,col1,col2):
     """Creates a default image: 2x2 grid of squares of two colors.
@@ -178,17 +189,6 @@ def findFieldByGridCoords(gx,gy):
         None: if there's no field with grid coords given."""
 
     return findAreaByGridCoords(gx,gy).object
-
-# lists
-entities = []
-colliders = []
-fields = []
-plants = []
-areas = []
-slots = []
-sellPanelObjects = []
-sellPanelItems = []
-sellPanelButtons = []
 
 def checkCollisions(obj,lst:list):
     """Checks object's collision with every object in a given list.
@@ -301,10 +301,18 @@ class field(entity):
 
         self.gridx = gridx
         self.gridy = gridy
+        self.multiplier = 1
+        self.fertilized = False
         findAreaByGridCoords(gridx,gridy).object = self
 
         super().__init__(x, y, 0, image=soilImage)
         fields.append(self)
+
+    def fertilize(self):
+        """Increase multiplier to 3."""
+        self.multiplier = 3
+        self.image = fertilizedSoilImage
+        self.fertilized = True
 
 class wheat(entity):
     """Wheat object that grows on certain field. List: plants."""
@@ -320,7 +328,7 @@ class wheat(entity):
         plants.append(self)
     def increaseTimePlanted(self):
         """Adds dt to time planted."""
-        self.timePlanted += dt
+        self.timePlanted += dt*self.field.multiplier
         if self.phase < len(self.growthSequence)-1 and self.timePlanted > self.growthTime[self.phase]:
             self.timePlanted = 0
             self.phase += 1
@@ -352,7 +360,7 @@ class wheat(entity):
 
 class inventory:
     items = {}
-    coins = 0
+    coins = 1000000
 
     @classmethod
     def add(cls,item,count):
@@ -382,7 +390,8 @@ class inventory:
         invPanel.blit(highlightFrameImage,(selectedInvSlot.x-5,selectedInvSlot.y-5))
         for i,count in cls.items.items():
             i.draw(i.slot.x,i.slot.y)
-            invPanel.blit(renderText("x"+str(count),"black"),(i.slot.x+BLOCK_SIZE/2,i.slot.y+BLOCK_SIZE+i.title.get_height()))
+            countText = renderText("x"+str(count),"black")
+            invPanel.blit(countText,(i.slot.x+BLOCK_SIZE/2-countText.get_width()//2,i.slot.y+BLOCK_SIZE+i.title.get_height()+10))
 
         invPanel.blit(coinImage,(1080,invPanel.get_height()-90))
         invPanel.blit(renderBigText(str(displayCoinsAmount()),"black"),(1165,invPanel.get_height()-60))
@@ -420,7 +429,7 @@ class item:
     def draw(self,x,y):
         invPanel.blit(self.image,(x,y))
         self.title = renderText(self.name,"black")
-        invPanel.blit(self.title,(x,y+BLOCK_SIZE))
+        invPanel.blit(self.title,(x+BLOCK_SIZE//2-self.title.get_width()//2,y+BLOCK_SIZE+10))
 
 class slot:
     """Class for inventory slots. List: slots."""
@@ -481,6 +490,129 @@ class sellPanelButton(sellPanelObject):
     def action(self):
         pass
 
+class machine(entity):
+    """Class for machines like millstone. List: machines"""
+    def __init__(self, x, y, image):
+        super().__init__(x, y, 0,BLOCK_SIZE,BLOCK_SIZE,image)
+        machines.append(self)
+
+    def onLeftClick(self):
+        pass
+
+    def onRightClick(self):
+        pass
+
+    def onTick(self):
+        pass
+
+class millstoneMachine(machine):
+    """Millstone."""
+    def __init__(self, x, y):
+        super().__init__(x, y, millstoneImage)
+        self.holdStart = None
+        self.holdTime = 0
+        self.timeToComplete = 0.1
+        barX,barY = self.x-5,self.y-15
+        if self.x == 0:
+            barX = 0
+        if self.y == 0:
+            barY = 0
+        self.prBar = progressBar(barX,barY)
+        self.empty = True
+        self.itemIn = None
+        self.inputOutput = {
+            wheatBundle: flour
+        }
+        self.completed = False
+    def onLeftClick(self):
+        if self.holdStart is None and not self.completed:
+            self.holdTime = 0
+            self.holdStart = time()
+            print("grtind")
+        if self.holdTime >= self.timeToComplete:
+            self.holdTime = 0
+
+    def onRightClick(self):
+        if selectedInvSlot.item in self.inputOutput and self.empty:
+            self.empty = False
+            self.itemIn = selectedInvSlot.item
+            inventory.remove(selectedInvSlot.item)
+            print("put")
+
+
+    def onTick(self):
+        mouse = pygame.mouse.get_pressed()
+        mousex,mousey = pygame.mouse.get_pos()
+        if mouse[2] and self.getRect().collidepoint((mousex,mousey)):
+            self.onRightClick()
+        if not self.empty and self.prBar.hidden:
+            self.prBar.show()
+        if ((not mouse[0] and self.getRect().collidepoint((mousex,mousey))) or self.empty) and not self.completed:
+            self.holdStart = None
+            if not self.prBar.hidden:
+                self.prBar.hide()
+            return
+
+        if self.holdStart is not None:
+            self.holdTime += dt
+            if self.holdTime >= self.timeToComplete:
+                self.prBar.hide()
+                inventory.add(self.inputOutput[self.itemIn], 1)
+                self.empty = True
+                self.holdStart = None
+                self.holdTime = 0
+
+        self.prBar.setAnimationFrame(int(self.holdTime/self.timeToComplete*len(progressBarSequence)))
+
+class progressBar(entity):
+    """Class for progress bars."""
+    def __init__(self, x, y):
+        super().__init__(x, y, 5, 90,10,progressBarSequence[0])
+        self.trackedValue = 0
+        self.index = 0
+        self.drawCopy = None
+        self.hidden = False
+
+    def changeNextFrame(self):
+        """Change anuimation frame to next.""" 
+        self.index += 1
+        if self.index > len(progressBarSequence)-1:
+            self.index = 0
+        self.image = progressBarSequence[self.index]
+
+    def setAnimationFrame(self,index):
+        """Set animation frame to some value."""
+        self.index = index
+        self.image = progressBarSequence[self.index]
+
+    def hide(self):
+        self.drawCopy = self.draw
+        self.draw = self.emptyFunc
+        self.hidden = True
+
+    def show(self):
+        if self.drawCopy is None:
+            return
+
+        self.draw = self.drawCopy
+        self.hidden = False
+
+    def emptyFunc(self):
+        return
+
+
+# lists
+entities:list[entity] = []
+colliders:list[obstacle] = []
+fields:list[field] = []
+plants:list[wheat] = []
+areas:list[area] = []
+slots:list[slot] = []
+sellPanelObjects:list[sellPanelObject] = []
+sellPanelItems:list[sellPanelItem] = []
+sellPanelButtons:list[sellPanelButton] = []
+machines:list[machine] = []
+
 # create slots
 for x in range(40,1280,200):
     slot(x,10)
@@ -488,6 +620,9 @@ for x in range(40,1280,200):
 wheatSeeds = item(wheatSeedsImage,"wheat seeds")
 wheatBundle = item(wheatBundleImage, "wheat bundle")
 farmland = item(soilImage, "farmland")
+woodAsh = item(woodAshImage, "wood ash")
+millstone = item(millstoneImage, "millstone")
+flour = item(flourImage, "flour")
 
 # create a grid of area obbjects:
 for gy in range(GRID_HEIGHT):
@@ -503,6 +638,9 @@ farmer = entity(1200,360,image=farmerImage)
 sellPanelItem(60,80,"wheat bundle",wheatBundle, image=wheatBundleImage) # wheat
 sellPanelItem(160,80,"wheat seeds",wheatSeeds, image=wheatSeedsImage, buyable=True) # seeds
 sellPanelItem(260,80,"farmland", farmland, image=soilImage, buyable=True, sellable=False) # farmland
+sellPanelItem(360, 80, "wood ash", woodAsh, image=woodAshImage, buyable=True, sellable=False) # wood ash
+sellPanelItem(460,80,"millstone", millstone, image=millstoneImage, buyable=True, sellable=True) # millstone
+sellPanelItem(60, 180, "flour", flour, image=flourImage, buyable=False, sellable=True)
 lineSurf = pygame.Surface((10,720))
 pygame.draw.line(lineSurf,"black",(5,0),(5,720),10)
 sellPanelObject(640,0,image=lineSurf)
@@ -559,8 +697,8 @@ def sellAll():
     if not sellCheck():
         return
 
-    inventory.coins += SELL_PANEL_PRICE_LIST[selectedSellableItem.name]*(inventory.items[selectedSellableItem.item]-1)
-    inventory.items[selectedSellableItem.item] = 1
+    inventory.coins += SELL_PANEL_PRICE_LIST[selectedSellableItem.name]*(inventory.items[selectedSellableItem.item])
+    inventory.items[selectedSellableItem.item] = 0
     inventory.popFromItems(selectedSellableItem.item)
 
 def buyMax():
@@ -617,8 +755,8 @@ def buyCustom():
 
 # buttons
 sell1Button = sellPanelButton(60,560-192,image=sell1ButtonImage)
-sellAllButton = sellPanelButton(224,560-192,image=sellAllButtonImage)
-sellCustomButton = sellPanelButton(388,560-192,image=sellCustomButtonImage)
+sellCustomButton = sellPanelButton(224,560-192,image=sellCustomButtonImage)
+sellAllButton = sellPanelButton(388,560-192,image=sellAllButtonImage)
 buy1Button = sellPanelButton(60,560-96, image=buy1Image)
 buyCustomButton = sellPanelButton(224,560-96, image=buyCustomImage)
 buyMaxButton = sellPanelButton(388, 560-96, image=buyMaxImage)
@@ -632,12 +770,16 @@ buyMaxButton.action = buyMax
 
 highlightFrame = sellPanelObject(-950,-950,layer=-1,image=highlightFrameImage)
 SELL_PANEL_PRICE_LIST = {
-    "wheat bundle": 15,
+    "wheat bundle": 5,
     "wheat seeds": 1,
+    "millstone": 75,
+    "flour": 20,
 }
 BUY_PANEL_PRICE_LIST = {
     "wheat seeds": 1,
-    "farmland": 50,
+    "farmland": 30,
+    "wood ash": 10,
+    "millstone": 100
 }
 
 # create walls of the screen
@@ -692,22 +834,38 @@ def placePlant(field):
 
 def mouseControl():
     """Covers everything that is activated with mouse."""
-    global canPressAgain,newFarmlandCreated,selectedInvSlot
+    global canPressAgain,newFarmlandCreated,selectedInvSlot,justExited
 
     mouse = pygame.mouse.get_pressed()
     mousex,mousey = pygame.mouse.get_pos()
 
     if mouse[2] and 0 < mousex < WIDTH and 0 < mousey < HEIGHT:
         if not sellPanelOpened:
-            hoverField = findFieldByCoords(mousex,mousey)
+            hoverField:field = findFieldByCoords(mousex,mousey)
             if hoverField is None and farmland in inventory.items and selectedInvSlot == farmland.slot:
                 fieldx,fieldy = mousex//BLOCK_SIZE,mousey//BLOCK_SIZE
                 if 0 <= fieldx <= 12 and 0 <= fieldy <= 6:
+                    for m in machines:
+                        if m.x//BLOCK_SIZE == fieldx and m.y//BLOCK_SIZE == fieldy:
+                            return
                     field(fieldx,fieldy)
                     inventory.remove(farmland)
                     newFarmlandCreated = True
-            elif not newFarmlandCreated and selectedInvSlot == wheatSeeds.slot:
-                placePlant(hoverField)
+            elif not newFarmlandCreated :
+                if selectedInvSlot == wheatSeeds.slot:
+                    placePlant(hoverField)
+                elif selectedInvSlot == woodAsh.slot and hasattr(hoverField, "fertilized") and not hoverField.fertilized:
+                    hoverField.fertilize()
+                    inventory.remove(woodAsh)
+                elif selectedInvSlot == millstone.slot and hoverField is None and 0 <= mousey//BLOCK_SIZE < 7 and 0 <= mousex//BLOCK_SIZE <= 12 and canPressAgain:
+                    if millstone in inventory.items:
+                        millstoneMachine(mousex//BLOCK_SIZE*BLOCK_SIZE,mousey//BLOCK_SIZE*BLOCK_SIZE)
+                        inventory.remove(millstone)
+                        canPressAgain = False
+            else:
+                for m in machines:
+                    if m.getRect().collidepoint((mousex,mousey)):
+                        m.onRightClick()
     if mouse[0] and 0 < mousex < WIDTH and 0 < mousey < HEIGHT:
         if 0 < mousex < WIDTH and 560 < mousey < HEIGHT:
             # in inv panel
@@ -718,7 +876,13 @@ def mouseControl():
         if not sellPanelOpened:
             # in screen
             hoverField = findFieldByCoords(mousex,mousey)
-            breakPlant(hoverField)
+            if hoverField is None:
+                for m in machines:
+                    if m.getRect().collidepoint((mousex,mousey)):
+                        m.onLeftClick()
+                        break
+            if not justExited:
+                breakPlant(hoverField)
         else:
             # in sell panel
             for i in sellPanelItems:
@@ -738,9 +902,10 @@ def mouseControl():
         if farmer.getRect().collidepoint(mousex,mousey):
             showSellPanel()
 
-    if not any(mouse):
+    elif not any(mouse):
         canPressAgain = True
         newFarmlandCreated = False
+        justExited = False
 
 def showSellPanel():
     """Shows the 'sell and buy' panel."""
@@ -750,9 +915,10 @@ def showSellPanel():
 
 def hideSellPanel():
     """Hides the 'sell and buy' panel."""
-    global sellPanelOpened
+    global sellPanelOpened,justExited
 
     sellPanelOpened = False
+    justExited = True
 
 backButton.action = hideSellPanel
 
@@ -829,12 +995,14 @@ def render():
 
 def update():
     for pl in plants:
-        pl:wheat
         pl.increaseTimePlanted()
 
+    for m in machines:
+        m.onTick()
+
 inventory.add(wheatSeeds,10)
-inventory.add(farmland,10)
-inventory.add(wheatBundle,10)
+inventory.add(millstone,1)
+inventory.add(wheatBundle,35)
 selectedInvSlot = list(inventory.items.keys())[0].slot
 screen.fill("white")
 while running:

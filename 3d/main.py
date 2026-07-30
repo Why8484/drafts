@@ -280,7 +280,7 @@ class cube:
         meshes.append(self)
 
     def wallFromIndices(self,i1,i2,i3,i4):
-        return wall([self.vertices[i1],self.vertices[i2],self.vertices[i3],self.vertices[i4]],"gray")
+        return wall([self.vertices[i1],self.vertices[i2],self.vertices[i3],self.vertices[i4]])
 
     def wallFromEdgeIndices(self,e1,e2,e3,e4):
         return wall([self.edges[e1],self.edges[e2],self.edges[e3],self.edges[e4], "orange"])
@@ -520,7 +520,7 @@ def placeObjects():
     global selectedObject
 
     # cube((0.2,0.2,1),0.2)
-    selectedObject = sphere(0.1,(0.1,0.1,0.5),32)
+    selectedObject = sphere(0.1,(0.1,0.1,0.5),12)
     # circle((0.1,0.1,2),12,12)
 
 placeObjects()

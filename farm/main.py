@@ -124,6 +124,11 @@ fertilizedSoilImage = loadImage("fertilizedSoil.png")
 millstoneImage = loadImage("millstoneFull.png")
 progressBarSequence = loadFromFolder("progressBar")
 flourImage = loadImage("flour.png")
+waterBucketImage = loadImage("waterBucket.png")
+bowlImage = loadImage("bowl.png")
+doughImage = loadImage("dough.png")
+brickOvenImage = loadImage("brickOven.png")
+breadImage = loadImage("bread.png")
 
 def createDefaultImage(w,h,col1,col2):
     """Creates a default image: 2x2 grid of squares of two colors.
@@ -360,7 +365,7 @@ class wheat(entity):
 
 class inventory:
     items = {}
-    coins = 1000000
+    coins = 9000000
 
     @classmethod
     def add(cls,item,count):
@@ -528,7 +533,6 @@ class millstoneMachine(machine):
         if self.holdStart is None and not self.completed:
             self.holdTime = 0
             self.holdStart = time()
-            print("grtind")
         if self.holdTime >= self.timeToComplete:
             self.holdTime = 0
 
@@ -537,7 +541,6 @@ class millstoneMachine(machine):
             self.empty = False
             self.itemIn = selectedInvSlot.item
             inventory.remove(selectedInvSlot.item)
-            print("put")
 
 
     def onTick(self):
@@ -564,6 +567,153 @@ class millstoneMachine(machine):
 
         self.prBar.setAnimationFrame(int(self.holdTime/self.timeToComplete*len(progressBarSequence)))
 
+class bowlMachine(machine):
+    """Class for bowl."""
+    def __init__(self, x, y):
+        super().__init__(x, y, bowlImage)
+        self.holdStart = None
+        self.holdTime = 0
+        self.timeToComplete = 0.1
+        barX,barY = self.x-5,self.y-15
+        if self.x == 0:
+            barX = 0
+        if self.y == 0:
+            barY = 0
+        self.prBar = progressBar(barX,barY)
+        self.empty = True
+        self.itemsIn = []
+        self.inputOutput = {
+            (flour,waterBucket): dough,
+            (waterBucket, flour): dough
+        }
+        self.increaseHoldTime = True
+
+    def onLeftClick(self):
+        global canPressAgain
+
+        if self.holdStart is None:
+            self.holdTime = 0
+            self.holdStart = time()
+        if self.holdTime >= self.timeToComplete:
+            self.holdTime = 0
+
+    def onRightClick(self):
+        global canPressAgain
+
+        if not selectedInvSlot.item is None and canPressAgain:
+            self.empty = False
+            self.itemsIn.append(selectedInvSlot.item)
+            inventory.remove(selectedInvSlot.item)
+            canPressAgain = False
+
+
+    def onTick(self):
+        mouse = pygame.mouse.get_pressed()
+        mousex,mousey = pygame.mouse.get_pos()
+        if mouse[2] and self.getRect().collidepoint((mousex,mousey)):
+            self.onRightClick()
+        if not self.empty and self.prBar.hidden:
+            self.prBar.show()
+        if ((not mouse[0] and self.getRect().collidepoint((mousex,mousey))) or self.empty):
+            # hide bar and stop the charging of it if not mouse pressed or it's not on the object or it's empty
+            self.holdStart = None
+            if not self.prBar.hidden:
+                self.prBar.hide()
+            return
+
+        if self.holdStart is not None and self.increaseHoldTime:
+            self.holdTime += dt
+            if self.holdTime >= self.timeToComplete:
+                self.prBar.hide()
+                if tuple(self.itemsIn) in self.inputOutput:
+                    inventory.add(self.inputOutput[tuple(self.itemsIn)], 1)
+                    self.itemsIn.clear()
+                else:
+                    for i in self.itemsIn:
+                        inventory.add(i,1)
+                    self.itemsIn.clear()
+                self.empty = True
+                self.holdStart = None
+                self.holdTime = 0
+
+        if not self.increaseHoldTime:
+            self.increaseHoldTime = True
+
+        self.prBar.setAnimationFrame(int(self.holdTime/self.timeToComplete*len(progressBarSequence)))
+
+class brickOvenMachine(machine):
+    def __init__(self, x, y):
+        super().__init__(x, y, brickOvenImage)
+        self.puttableItems = { 
+            # all items that you're able to put in an oven. the negatice value represents the item smelting and the positive the fuel.
+            # It also represents how much fuel does a smeltable use or how much power the fuel can give.
+            dough: -5,
+            woodAsh: 10
+        }
+
+        self.produce = {
+            dough: bread
+        }
+
+        self.fuelIn = None
+        self.itemIn = None
+        self.producedItem = None
+        self.fuelLeft = 0
+        self.holdTime = 0
+
+        barX,barY = self.x-5,self.y-15
+        if self.x == 0:
+            barX = 0
+        if self.y == 0:
+            barY = 0
+        self.prBar = progressBar(barX,barY)
+    def onRightClick(self):
+        if self.producedItem is not None:
+            inventory.add(self.producedItem,1)
+            self.producedItem = None
+            self.prBar.hide()
+            return
+        
+        if selectedInvSlot.item in self.puttableItems:
+            powerValue = self.puttableItems[selectedInvSlot.item]
+            if powerValue < 0 and self.itemIn is None:
+                self.itemIn = selectedInvSlot.item
+                inventory.remove(selectedInvSlot.item)
+            elif powerValue > 0 and self.fuelIn is None:
+                self.fuelIn = selectedInvSlot.item
+                inventory.remove(selectedInvSlot.item)
+                self.fuelLeft += powerValue
+
+    def onTick(self):
+        mouse = pygame.mouse.get_pressed()
+        pos = pygame.mouse.get_pos()
+        if mouse[2] and self.x < pos[0] < self.x+self.width and self.y < pos[1] < self.y+self.height:
+            self.onRightClick()
+
+        if not self.prBar.hidden:
+            self.prBar.hide()
+        if self.fuelIn is not None and self.itemIn is not None:
+            self.prBar.show()
+            self.holdTime += dt
+            if self.holdTime > abs(self.puttableItems[self.itemIn]):
+                if self.itemIn in self.produce:
+                    self.producedItem = self.produce[self.itemIn]
+                    self.fuelLeft -= self.puttableItems[self.fuelIn]
+                    self.fuelIn = None
+                    self.itemIn = None  
+                else:
+                    self.producedItem = self.itemIn
+                    self.fuelLeft -= self.puttableItems[self.fuelIn]
+                    self.fuelIn = None
+                    self.itemIn = None  
+
+        if self.holdTime > 0 and self.itemIn is not None:
+            self.prBar.setAnimationFrame(int(self.holdTime/abs(self.puttableItems[self.itemIn])*len(progressBarSequence)))
+
+        
+
+
+
 class progressBar(entity):
     """Class for progress bars."""
     def __init__(self, x, y):
@@ -582,6 +732,8 @@ class progressBar(entity):
 
     def setAnimationFrame(self,index):
         """Set animation frame to some value."""
+        if index > len(progressBarSequence)-1:
+            return
         self.index = index
         self.image = progressBarSequence[self.index]
 
@@ -623,6 +775,11 @@ farmland = item(soilImage, "farmland")
 woodAsh = item(woodAshImage, "wood ash")
 millstone = item(millstoneImage, "millstone")
 flour = item(flourImage, "flour")
+waterBucket = item(waterBucketImage, "bucket of water")
+bowl = item(bowlImage, "bowl")
+dough = item(doughImage, "dough")
+brickOven = item(brickOvenImage, "brick oven")
+bread = item(breadImage, "bread")
 
 # create a grid of area obbjects:
 for gy in range(GRID_HEIGHT):
@@ -640,7 +797,12 @@ sellPanelItem(160,80,"wheat seeds",wheatSeeds, image=wheatSeedsImage, buyable=Tr
 sellPanelItem(260,80,"farmland", farmland, image=soilImage, buyable=True, sellable=False) # farmland
 sellPanelItem(360, 80, "wood ash", woodAsh, image=woodAshImage, buyable=True, sellable=False) # wood ash
 sellPanelItem(460,80,"millstone", millstone, image=millstoneImage, buyable=True, sellable=True) # millstone
-sellPanelItem(60, 180, "flour", flour, image=flourImage, buyable=False, sellable=True)
+sellPanelItem(60, 180, "flour", flour, image=flourImage, buyable=False, sellable=True) #flour
+sellPanelItem(160, 180, "bucket of water", waterBucket, image=waterBucketImage, buyable=True, sellable=False) # bucket of water
+sellPanelItem(260,180, "bowl", bowl, sellable=True,buyable=True, image=bowlImage) # bowl
+sellPanelItem(360,180, "dough", dough, image=doughImage) # dough
+sellPanelItem(460,180, "brick oven", brickOven, image=brickOvenImage, buyable=True, sellable=True) # brick oven
+sellPanelItem(60, 280, "bread", bread, sellable=True, buyable=False, image=breadImage) # bread
 lineSurf = pygame.Surface((10,720))
 pygame.draw.line(lineSurf,"black",(5,0),(5,720),10)
 sellPanelObject(640,0,image=lineSurf)
@@ -770,16 +932,23 @@ buyMaxButton.action = buyMax
 
 highlightFrame = sellPanelObject(-950,-950,layer=-1,image=highlightFrameImage)
 SELL_PANEL_PRICE_LIST = {
-    "wheat bundle": 5,
-    "wheat seeds": 1,
     "millstone": 75,
     "flour": 20,
+    "wheat seeds": 1,
+    "bowl": 50,
+    "wheat bundle": 5,
+    "dough": 30,
+    "brick oven": 450,
+    "bread": 45,
 }
 BUY_PANEL_PRICE_LIST = {
     "wheat seeds": 1,
     "farmland": 30,
     "wood ash": 10,
-    "millstone": 100
+    "bucket of water": 10,
+    "millstone": 100,
+    "bowl": 75,
+    "brick oven": 500,
 }
 
 # create walls of the screen
@@ -852,7 +1021,7 @@ def mouseControl():
                     inventory.remove(farmland)
                     newFarmlandCreated = True
             elif not newFarmlandCreated :
-                if selectedInvSlot == wheatSeeds.slot:
+                if selectedInvSlot == wheatSeeds.slot and not mouse[0]:
                     placePlant(hoverField)
                 elif selectedInvSlot == woodAsh.slot and hasattr(hoverField, "fertilized") and not hoverField.fertilized:
                     hoverField.fertilize()
@@ -862,6 +1031,14 @@ def mouseControl():
                         millstoneMachine(mousex//BLOCK_SIZE*BLOCK_SIZE,mousey//BLOCK_SIZE*BLOCK_SIZE)
                         inventory.remove(millstone)
                         canPressAgain = False
+                elif selectedInvSlot == bowl.slot and hoverField is None and 0 <= mousey//BLOCK_SIZE <= 6 and 0 <= mousex//BLOCK_SIZE <= 12 and canPressAgain:
+                    bowlMachine(mousex//BLOCK_SIZE*BLOCK_SIZE,mousey//BLOCK_SIZE*BLOCK_SIZE)
+                    inventory.remove(bowl)
+                    canPressAgain = False
+                elif selectedInvSlot == brickOven.slot and hoverField is None and 0 <= mousey//BLOCK_SIZE <= 6 and 0 <= mousex//BLOCK_SIZE <= 12 and canPressAgain:
+                    brickOvenMachine(mousex//BLOCK_SIZE*BLOCK_SIZE,mousey//BLOCK_SIZE*BLOCK_SIZE)
+                    inventory.remove(brickOven)
+                    canPressAgain = False
             else:
                 for m in machines:
                     if m.getRect().collidepoint((mousex,mousey)):
@@ -1000,9 +1177,10 @@ def update():
     for m in machines:
         m.onTick()
 
-inventory.add(wheatSeeds,10)
-inventory.add(millstone,1)
-inventory.add(wheatBundle,35)
+inventory.add(waterBucket,1)
+inventory.add(bowl,1 )
+inventory.add(flour,1)
+inventory.add(wheatSeeds,100)
 selectedInvSlot = list(inventory.items.keys())[0].slot
 screen.fill("white")
 while running:

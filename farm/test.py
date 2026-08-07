@@ -1,17 +1,13 @@
-import pygame 
-
-top = pygame.image.load("assets\\topMillstone.png")
-bottom = pygame.image.load("assets\\bottomMillstone.png")
-
-x,y = 0,0
-
-surf = pygame.Surface((80,80))
+# Example file showing a basic pygame "game loop"
+import pygame
 
 # pygame setup
 pygame.init()
 screen = pygame.display.set_mode((1280, 720))
 clock = pygame.time.Clock()
 running = True
+font = pygame.font.SysFont("comicsansms",88)
+surf = font.render("я бурундук",False, (0,0,0))
 
 while running:
     # poll for events
@@ -20,28 +16,11 @@ while running:
         if event.type == pygame.QUIT:
             running = False
 
-    keys = pygame.key.get_pressed()
-    if keys[pygame.K_RIGHT]:
-        x += 1
-    if keys[pygame.K_LEFT]:
-        x -= 1
-    if keys[pygame.K_UP]:
-        y -= 1
-    if keys[pygame.K_DOWN]:
-        y += 1
-    if keys[pygame.K_s]:
-        pygame.image.save(surf, "ssurf.png")
-
     # fill the screen with a color to wipe away anything from last frame
-    screen.fill("white")
+    screen.fill("purple")
 
     # RENDER YOUR GAME HERE
-    surf.fill("purple")
-    surf.blit(bottom, (x,y))
-    surf.blit(top,(0,0))
-    screen.blit(surf,(0,0))
-
-
+    screen.blit(surf,(300,300))
     # flip() the display to put your work on screen
     pygame.display.flip()
 

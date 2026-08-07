@@ -8,8 +8,8 @@ pygame.init()
 HEIGHT = 720
 WIDTH = 1280
 screen = pygame.display.set_mode((WIDTH,HEIGHT))
-invPanel = pygame.Surface((WIDTH, 160))
-sellPanel = pygame.Surface((WIDTH,560))
+invPanel = pygame.Surface((WIDTH, 160)) # 1280 X 160
+sellPanel = pygame.Surface((WIDTH,560)) # 1280 X 560
 sellPanelOpened = False
 clock = pygame.time.Clock()
 pygame.display.set_caption("farm")
@@ -18,8 +18,11 @@ MAX_FPS = 120
 BLOCK_SIZE = 80
 GRID_WIDTH = int(WIDTH/BLOCK_SIZE) #16
 GRID_HEIGHT = int(HEIGHT/BLOCK_SIZE)  #9
-font = pygame.font.Font(r"assets\font.ttf",22)
-bigFont = pygame.font.SysFont(r"assets\font.ttf",44)
+FONT_HEIGHT = 30
+BIG_FONT_HEIGHT = 66
+font = pygame.font.Font(r"assets\font.ttf",FONT_HEIGHT)
+bigFont = pygame.font.Font(r"assets\font.ttf",BIG_FONT_HEIGHT)
+mediumFont = pygame.font.Font(r"assets\font.ttf", 44)
 running = True
 updateFrame = True
 selectedSellableItem = None
@@ -39,33 +42,39 @@ def renderText(text:str,color):
     return surf
 
 
-def renderBigText(text:str,color):
+def renderBigText(text:str,color,size=BIG_FONT_HEIGHT):
     """Returns a surface of rendered text in big font."""
 
-    surf = bigFont.render(text,False,color)
+    if size == BIG_FONT_HEIGHT:
+        surf = bigFont.render(text,False,color)
+    elif size == 44:
+        surf = mediumFont.render(text,False,color)
     return surf
 
-def displayCoinsAmount():
-    """Returns coin amount as 1M or 1K."""
-
-    coinsAmt = inventory.coins
-
+def displayLetterAmount(amt):
     numbers = {
         10**3: "K",
         10**6: "M",
         10**9: "T"
     }
 
-    if coinsAmt < list(numbers.keys())[0]:
-        return coinsAmt
+    if amt < list(numbers.keys())[0]:
+        return amt
 
     for n,letter in numbers.items():
-        if math.floor(coinsAmt/n) < 1000:
-            nDigits = 3 - len(list(str(round(coinsAmt/n))))
-            returnValue = str(round(coinsAmt/n,ndigits=nDigits))
+        if math.floor(amt/n) < 1000:
+            nDigits = 3 - len(list(str(round(amt/n))))
+            returnValue = str(round(amt/n,ndigits=nDigits))
             if nDigits == 0:
-                returnValue = str(round(coinsAmt/n))
+                returnValue = str(round(amt/n))
             return returnValue + letter
+        
+def displayCoinsAmount():
+    """Returns coin amount as 1M or 1K."""
+
+    coinsAmt = inventory.coins
+
+    return displayLetterAmount(coinsAmt)
 
 def loadImage(path,join=True):
     """Loads an image using the path given and applies convert alpha to it.
@@ -129,6 +138,12 @@ bowlImage = loadImage("bowl.png")
 doughImage = loadImage("dough.png")
 brickOvenImage = loadImage("brickOven.png")
 breadImage = loadImage("bread.png")
+charcoalImage = loadImage("charcoal.png")
+woodImage = loadImage("wood.png")
+wetSoilImage = loadImage("wetSoil.png")
+fertilizedWetSoilImage = loadImage("fertilizedWetSoil.png")
+rightButton = loadImage("rightButton.png")
+leftButton = loadImage("leftButton.png")
 
 def createDefaultImage(w,h,col1,col2):
     """Creates a default image: 2x2 grid of squares of two colors.
@@ -242,7 +257,6 @@ class entity:
 
         if self.image is None:
             if self.width is None or self.height is None:
-                print("Invalid entity init input")
                 return
             self.image = createDefaultImage(self.width,self.height,
                                             (random.randint(0,255),random.randint(0,255),random.randint(0,255)),
@@ -257,8 +271,8 @@ class entity:
 
         entities.append(self)
 
-    def draw(self):
-        screen.blit(self.image,(self.x,self.y))
+    def draw(self,surf=screen):
+        surf.blit(self.image,(self.x,self.y))
 
     def updateSides(self):
         self.center = self.x+self.width//2,self.y+self.height//2
@@ -270,6 +284,9 @@ class entity:
 
     def getRect(self):
         return pygame.Rect(self.x,self.y,self.width,self.height)
+
+    def getInvRect(self):
+        return pygame.Rect(self.x,self.y+560, self.width,self.height)
 
 class obstacle(entity):
     """Object that is a collider and is in colliders list. List: colliders."""
@@ -308,6 +325,7 @@ class field(entity):
         self.gridy = gridy
         self.multiplier = 1
         self.fertilized = False
+        self.wet = False
         findAreaByGridCoords(gridx,gridy).object = self
 
         super().__init__(x, y, 0, image=soilImage)
@@ -315,9 +333,15 @@ class field(entity):
 
     def fertilize(self):
         """Increase multiplier to 3."""
-        self.multiplier = 3
-        self.image = fertilizedSoilImage
+        self.multiplier = 3 if not self.wet else 3.5
+        self.image = fertilizedSoilImage if not self.wet else fertilizedWetSoilImage
         self.fertilized = True
+
+    def makeWet(self):
+        """Increase multiplier to 1.8."""
+        self.multiplier = 1.8 if not self.fertilized else 3.5
+        self.image = wetSoilImage if not self.fertilized else fertilizedWetSoilImage
+        self.wet = True
 
 class wheat(entity):
     """Wheat object that grows on certain field. List: plants."""
@@ -366,6 +390,9 @@ class wheat(entity):
 class inventory:
     items = {}
     coins = 9000000
+    page = 1
+    previousPage = 1
+    LAST_PAGE = 6
 
     @classmethod
     def add(cls,item,count):
@@ -399,7 +426,9 @@ class inventory:
             invPanel.blit(countText,(i.slot.x+BLOCK_SIZE/2-countText.get_width()//2,i.slot.y+BLOCK_SIZE+i.title.get_height()+10))
 
         invPanel.blit(coinImage,(1080,invPanel.get_height()-90))
-        invPanel.blit(renderBigText(str(displayCoinsAmount()),"black"),(1165,invPanel.get_height()-60))
+        leftButtonEnt.draw(invPanel)
+        rightButtonEnt.draw(invPanel)
+        invPanel.blit(renderBigText(str(displayCoinsAmount()),"black",44),(1165,invPanel.get_height()-60))
 
 
     @classmethod
@@ -422,15 +451,54 @@ class inventory:
             item.slot = None
             cls.items.pop(item)
 
+    @classmethod
+    def changePage(cls, pageNum="right"):
+        """Changes the page of the inventory to param pageNum.
+        PageNum could also be equal to 'right'(changes the page to one directly to the right of the current one)
+        or 'left'(changes the page to one directly to the left of the current one)."""
+
+        if pageNum == "right":
+            cls.previousPage = cls.page
+            cls.page += 1
+            if cls.page > cls.LAST_PAGE:
+                cls.page = 1
+            cls.applyPage()
+
+        elif pageNum == "left":
+            cls.previousPage = cls.page
+            cls.page -= 1
+            if cls.page == 0:
+                cls.page = cls.LAST_PAGE
+            cls.applyPage()
+
+        else:
+            if not 1 <= pageNum <= cls.LAST_PAGE:
+                return
+            cls.previousPage = cls.page
+            cls.page = pageNum
+            cls.applyPage()
+
+    @classmethod
+    def applyPage(cls):
+        index = cls.previousPage - cls.page
+
+        for s in slots:
+            s.x += index*1280
+
+
+
+
 
 
 class item:
     """Class for items that show up in the inventory space. List: none."""
-    def __init__(self, image, name,layer=0):
+    def __init__(self, image, name,layer=0,description="",machineClass=None):
         self.image = image
+        self.machineClass = machineClass
         self.layer = layer
         self.name = name
         self.slot = None
+        self.description = description
     def draw(self,x,y):
         invPanel.blit(self.image,(x,y))
         self.title = renderText(self.name,"black")
@@ -438,9 +506,10 @@ class item:
 
 class slot:
     """Class for inventory slots. List: slots."""
-    def __init__(self,x,y):
+    def __init__(self,x,y,page):
         self.x = x
         self.y = y
+        self.page = page
         self.item = None
         slots.append(self)
 
@@ -474,15 +543,47 @@ class sellPanelItem(sellPanelObject):
         sellPanelItems.append(self)
     def select(self):
         """select this item as the selectedSellable."""
-        global selectedSellableItem,highlightFrame
+        global selectedSellableItem,highlightFrame,descriptionLines,descriptionPrice,descriptionTitle,descriptionPanel
 
         self.selected = True
         selectedSellableItem = self
         highlightFrame.x,highlightFrame.y = self.x-5,self.y-5
+
+        for descLine in descriptionLines:
+            descLine.image = renderText("","black")
+        for i,line in enumerate(self.item.description.splitlines()):
+            descriptionLines[i].image = renderText(line, "black")
+        descriptionTitle.image = renderBigText(self.name, "black")
+        descriptionTitle.x = 317 + descriptionPanel[0] - descriptionTitle.image.get_width()//2
+        buyPrice = "Buy for: " + str(BUY_PANEL_PRICE_LIST[self.name]) + "." if self.name in BUY_PANEL_PRICE_LIST else "Buy for: non-buyable."
+        sellPrice = "Sell for: " + str(SELL_PANEL_PRICE_LIST[self.name]) + "." if self.name in SELL_PANEL_PRICE_LIST else "Sell for: non-sellable."
+        sellableStr = "sellable: yes." if self.sellable else "sellable: no."
+        buyableStr = "buyable: yes." if self.buyable else "buyable: no."
+
+        descriptionPriceLines[0].image = renderText(sellableStr, "black")
+        descriptionPriceLines[1].image = renderText(buyableStr, "black")
+        descriptionPriceLines[2].image = renderText(buyPrice, "black")    
+        descriptionPriceLines[3].image = renderText(sellPrice, "black")
+
+        if self.buyable:
+            buyMaxText = "buy a maximum of " + str(displayLetterAmount(inventory.coins//int(BUY_PANEL_PRICE_LIST[self.name]))) + " " + self.name + " for " + str(displayLetterAmount(inventory.coins//int(BUY_PANEL_PRICE_LIST[self.name])*int(BUY_PANEL_PRICE_LIST[self.name]))) + " coins."
+        else:
+            buyMaxText = "This is non-buyable."
+        if self.sellable:
+            count = inventory.items[self.item] if self.item in inventory.items else 0
+            sellAllText = "sell all " + str(displayLetterAmount(count)) + " of your " + self.name + " for " + str(displayLetterAmount(int(SELL_PANEL_PRICE_LIST[self.name])*count)) + " coins."
+        else:
+            sellAllText = "This is non-sellable."
+        buyMaxLine.image = renderText(buyMaxText, "black")
+        sellAllLine.image = renderText(sellAllText, "black")
+
     def draw(self):
         super().draw()
         if self.sellable:
             sellPanel.blit(sellableIndicatorImage, (self.x + self.width - 10,self.y))
+        elif self.buyable:
+            sellPanel.blit(buyableIndicatorImage, (self.x + self.width - 10,self.y))
+            return
         if self.buyable:
             sellPanel.blit(buyableIndicatorImage, (self.x + self.width - 20,self.y))
             
@@ -526,7 +627,8 @@ class millstoneMachine(machine):
         self.empty = True
         self.itemIn = None
         self.inputOutput = {
-            wheatBundle: flour
+            wheatBundle: flour,
+            charcoal: woodAsh
         }
         self.completed = False
     def onLeftClick(self):
@@ -648,11 +750,13 @@ class brickOvenMachine(machine):
             # all items that you're able to put in an oven. the negatice value represents the item smelting and the positive the fuel.
             # It also represents how much fuel does a smeltable use or how much power the fuel can give.
             dough: -5,
-            woodAsh: 10
+            wood: (-3,5),
+            charcoal: 10,
         }
 
         self.produce = {
-            dough: bread
+            dough: bread,
+            wood: charcoal
         }
 
         self.fuelIn = None
@@ -661,58 +765,88 @@ class brickOvenMachine(machine):
         self.fuelLeft = 0
         self.holdTime = 0
 
+
         barX,barY = self.x-5,self.y-15
         if self.x == 0:
             barX = 0
         if self.y == 0:
             barY = 0
         self.prBar = progressBar(barX,barY)
+        self.fuelBar = progressBar(barX, self.y+72)
+        self.prBar.hide()
+        self.fuelBar.hide()
+        self.MaxFuel = 0
+        self.MaxItemPower = 0
+        self.justPutTheFuel = False
     def onRightClick(self):
+        if self.producedItem is not None:
+            return
+        if selectedInvSlot.item in self.puttableItems:
+            powerValue = self.puttableItems[selectedInvSlot.item]
+            if type(powerValue) == tuple:
+                if self.itemIn is None:
+                    self.itemIn = selectedInvSlot.item
+                    inventory.remove(selectedInvSlot.item)
+                    self.holdTime = 0
+                    self.justPutTheFuel = True
+                    self.MaxItemPower = powerValue[0]
+                elif self.itemIn is not None and (self.fuelIn is None or self.fuelIn == selectedInvSlot.item) and not self.justPutTheFuel:
+                    self.MaxFuel = powerValue[1]
+                    self.fuelIn = selectedInvSlot.item
+                    self.justPutTheFuel = True
+                    inventory.remove(selectedInvSlot.item)
+                    self.fuelLeft = powerValue[1]
+                return
+            if powerValue < 0 and self.itemIn is None:
+                self.itemIn = selectedInvSlot.item
+                inventory.remove(selectedInvSlot.item)
+                self.holdTime = 0
+                self.MaxItemPower = powerValue
+            elif powerValue > 0 and self.fuelIn is None:
+                self.MaxFuel = powerValue
+                self.fuelIn = selectedInvSlot.item
+                inventory.remove(selectedInvSlot.item)
+                self.fuelLeft = powerValue
+
+
+    def onLeftClick(self):
         if self.producedItem is not None:
             inventory.add(self.producedItem,1)
             self.producedItem = None
             self.prBar.hide()
             return
-        
-        if selectedInvSlot.item in self.puttableItems:
-            powerValue = self.puttableItems[selectedInvSlot.item]
-            if powerValue < 0 and self.itemIn is None:
-                self.itemIn = selectedInvSlot.item
-                inventory.remove(selectedInvSlot.item)
-            elif powerValue > 0 and self.fuelIn is None:
-                self.fuelIn = selectedInvSlot.item
-                inventory.remove(selectedInvSlot.item)
-                self.fuelLeft += powerValue
 
     def onTick(self):
         mouse = pygame.mouse.get_pressed()
         pos = pygame.mouse.get_pos()
         if mouse[2] and self.x < pos[0] < self.x+self.width and self.y < pos[1] < self.y+self.height:
             self.onRightClick()
+        if not any(mouse):
+            self.justPutTheFuel = False
 
-        if not self.prBar.hidden:
-            self.prBar.hide()
+        self.prBar.show() if self.itemIn is not None else None
+        self.fuelBar.show() if self.fuelIn is not None else None
+
         if self.fuelIn is not None and self.itemIn is not None:
-            self.prBar.show()
             self.holdTime += dt
-            if self.holdTime > abs(self.puttableItems[self.itemIn]):
+            self.fuelLeft -= dt
+            if self.fuelLeft <= 0:
+                self.fuelIn = None
+                self.fuelBar.hide()
+                self.fuelLeft = 0
+            if self.holdTime > abs(self.MaxItemPower):
                 if self.itemIn in self.produce:
                     self.producedItem = self.produce[self.itemIn]
-                    self.fuelLeft -= self.puttableItems[self.fuelIn]
-                    self.fuelIn = None
                     self.itemIn = None  
                 else:
                     self.producedItem = self.itemIn
-                    self.fuelLeft -= self.puttableItems[self.fuelIn]
-                    self.fuelIn = None
                     self.itemIn = None  
 
+
         if self.holdTime > 0 and self.itemIn is not None:
-            self.prBar.setAnimationFrame(int(self.holdTime/abs(self.puttableItems[self.itemIn])*len(progressBarSequence)))
-
-        
-
-
+            self.prBar.setAnimationFrame(int(self.holdTime/abs(self.MaxItemPower)*len(progressBarSequence)))
+        if self.fuelIn is not None:
+            self.fuelBar.setAnimationFrame(int(self.fuelLeft/self.MaxFuel*len(progressBarSequence)))
 
 class progressBar(entity):
     """Class for progress bars."""
@@ -752,7 +886,6 @@ class progressBar(entity):
     def emptyFunc(self):
         return
 
-
 # lists
 entities:list[entity] = []
 colliders:list[obstacle] = []
@@ -764,22 +897,117 @@ sellPanelObjects:list[sellPanelObject] = []
 sellPanelItems:list[sellPanelItem] = []
 sellPanelButtons:list[sellPanelButton] = []
 machines:list[machine] = []
+invControlButtons:list[entity] = []
 
 # create slots
-for x in range(40,1280,200):
-    slot(x,10)
+for page in range(6):
+    for x in range(80,1080, 200):
+        slot(page*1280+x,10,page+1)
 
-wheatSeeds = item(wheatSeedsImage,"wheat seeds")
-wheatBundle = item(wheatBundleImage, "wheat bundle")
-farmland = item(soilImage, "farmland")
-woodAsh = item(woodAshImage, "wood ash")
-millstone = item(millstoneImage, "millstone")
-flour = item(flourImage, "flour")
-waterBucket = item(waterBucketImage, "bucket of water")
-bowl = item(bowlImage, "bowl")
-dough = item(doughImage, "dough")
-brickOven = item(brickOvenImage, "brick oven")
-bread = item(breadImage, "bread")
+wheatSeeds = item(
+    wheatSeedsImage,
+    "wheat seeds",
+    description="""Small, golden grains ready to be sown into soil
+to grow wheat.""",
+)
+
+wheatBundle = item(
+    wheatBundleImage,
+    "wheat bundle",
+    description="""Treat every seed with care and it will reward you with this.
+A bundle of harvested wheat stalks, ready to be processed.""",
+)
+
+farmland = item(
+    soilImage,
+    "farmland",
+    description="""This dark earth is my whole life. Treat her with respect,
+and she'll take care of your family for generations.
+Tilled, rich, beautiful soil prepared for planting.""",
+)
+
+woodAsh = item(
+    woodAshImage,
+    "wood ash",
+    description="""The powder left behind after burning wood, useful as
+fertilizer.""",
+)
+
+millstone = item(
+    millstoneImage,
+    "millstone",
+    description="""A heavy stone tool used for grinding wheat grains
+into fine flour.
+Flour might come out with a slight taste of sweat in it,
+but don't worry - it's only the first few times.""",
+    machineClass=millstoneMachine,
+)
+
+flour = item(
+    flourImage,
+    "flour",
+    description="""Hard labor with a millstone finally paid off with this
+magical white dust.
+After you know the work put into it, it looks even better
+than... Let's say... another white dust.
+A fundamental ingredient used to make dough and bread.""",
+)
+
+waterBucket = item(
+    waterBucketImage,
+    "bucket of water",
+    description="""A bucket filled with clean water, straight from a nearby
+river, essential for life.
+You can see your reflection in it more clearer than in a
+mirror!""",
+)
+
+bowl = item(
+    bowlImage,
+    "bowl",
+    description="""A simple tool, but how useful is it! Used for combining
+ingridients.""",
+    machineClass=bowlMachine,
+)
+
+dough = item(
+    doughImage,
+    "dough",
+    description="""Warm beneath your hands. You can feel the life in it as
+you knead, which is waiting for the heat of the oven.""",
+)
+
+brickOven = item(
+    brickOvenImage,
+    "brick oven",
+    description="""An oven assembled using bricks. Built to retain high heat
+for baking bread.""",
+    machineClass=brickOvenMachine,
+)
+
+bread = item(
+    breadImage,
+    "bread",
+    description="""Ah! Love the taste of it. I will never forget what it
+was like to taste that for the first time.
+A freshly baked, golden-brown loaf of bread offering
+nutritious sustenance.""",
+)
+
+wood = item(
+    woodImage,
+    "wood",
+    description="""Logs, harvested staright from a forest. Can be made into
+charcoal using the oven.""",
+)
+
+charcoal = item(
+    charcoalImage,
+    "charcoal",
+    description="""Lightweight black carbon produced by heating wood,
+serving as a long-burning fuel. Can be grinded into
+wood ash using millstone.""",
+)
 
 # create a grid of area obbjects:
 for gy in range(GRID_HEIGHT):
@@ -790,6 +1018,14 @@ for gy in range(GRID_HEIGHT):
 field1 = field(1,1)
 
 farmer = entity(1200,360,image=farmerImage)
+rightButtonEnt = entity(990,50,image=rightButton)
+leftButtonEnt = entity(30,50,image=leftButton)
+
+
+rightButtonEnt.getRect = rightButtonEnt.getInvRect
+leftButtonEnt.getRect = leftButtonEnt.getInvRect
+entities.remove(rightButtonEnt)
+entities.remove(leftButtonEnt)
 
 # sell panel things
 sellPanelItem(60,80,"wheat bundle",wheatBundle, image=wheatBundleImage) # wheat
@@ -803,9 +1039,11 @@ sellPanelItem(260,180, "bowl", bowl, sellable=True,buyable=True, image=bowlImage
 sellPanelItem(360,180, "dough", dough, image=doughImage) # dough
 sellPanelItem(460,180, "brick oven", brickOven, image=brickOvenImage, buyable=True, sellable=True) # brick oven
 sellPanelItem(60, 280, "bread", bread, sellable=True, buyable=False, image=breadImage) # bread
+sellPanelItem(160, 280, "wood", wood, buyable=True, sellable=False, image=woodImage) # wood
 lineSurf = pygame.Surface((10,720))
 pygame.draw.line(lineSurf,"black",(5,0),(5,720),10)
 sellPanelObject(640,0,image=lineSurf)
+
 def sellCheck():
     global selectedSellableItem
 
@@ -827,10 +1065,11 @@ def buyCheck(amt=1):
 
     if selectedSellableItem is None:
         return False
-    if inventory.coins < BUY_PANEL_PRICE_LIST[selectedSellableItem.name]*amt:
-        return False
     if not selectedSellableItem.buyable:
         return False
+    if inventory.coins < BUY_PANEL_PRICE_LIST[selectedSellableItem.name]*amt:
+        return False
+
 
     return True
 
@@ -842,6 +1081,7 @@ def sell1():
     
     inventory.coins += SELL_PANEL_PRICE_LIST[selectedSellableItem.name]
     inventory.remove(selectedSellableItem.item)
+    selectedSellableItem.select()
 
 def buy1():
     global selectedSellableItem
@@ -851,6 +1091,8 @@ def buy1():
 
     inventory.coins -= BUY_PANEL_PRICE_LIST[selectedSellableItem.name]
     inventory.add(selectedSellableItem.item,1)
+    selectedSellableItem.select()
+
 
 
 def sellAll():
@@ -862,6 +1104,8 @@ def sellAll():
     inventory.coins += SELL_PANEL_PRICE_LIST[selectedSellableItem.name]*(inventory.items[selectedSellableItem.item])
     inventory.items[selectedSellableItem.item] = 0
     inventory.popFromItems(selectedSellableItem.item)
+    selectedSellableItem.select()
+
 
 def buyMax():
     global selectedSellableItem
@@ -876,6 +1120,8 @@ def buyMax():
 
     inventory.coins -= BUY_PANEL_PRICE_LIST[selectedSellableItem.name]*maxAmount
     inventory.add(selectedSellableItem.item,maxAmount)
+    selectedSellableItem.select()
+
 
 def sellCustom():
     global selectedSellableItem,actionOnInputEnd,inputValue
@@ -896,6 +1142,8 @@ def sellCustom():
 
     actionOnInputEnd = sellCutsomAmt
     inputValue = "-"
+    selectedSellableItem.select()
+
 
 def buyCustom():
     global actionOnInputEnd,inputValue
@@ -913,6 +1161,8 @@ def buyCustom():
 
     actionOnInputEnd = buyCustomAmt
     inputValue = "-"
+    selectedSellableItem.select()
+
 
 
 # buttons
@@ -930,6 +1180,25 @@ buy1Button.action = buy1
 buyCustomButton.action = buyCustom
 buyMaxButton.action = buyMax
 
+descriptionPanel = (635,560)
+descriptionTitle = sellPanelObject(317+descriptionPanel[0],60)
+descriptionLines = [
+sellPanelObject(30+descriptionPanel[0],130),
+sellPanelObject(30+descriptionPanel[0], 130+FONT_HEIGHT),
+sellPanelObject(30+descriptionPanel[0], 130+FONT_HEIGHT*2),
+sellPanelObject(30+descriptionPanel[0], 130+FONT_HEIGHT*3),
+sellPanelObject(30+descriptionPanel[0], 130+FONT_HEIGHT*4),
+]
+
+descriptionPriceLines = [
+sellPanelObject(30+descriptionPanel[0], 300),
+sellPanelObject(30+descriptionPanel[0], 300+FONT_HEIGHT),
+sellPanelObject(30+descriptionPanel[0], 300+FONT_HEIGHT*2),
+sellPanelObject(30+descriptionPanel[0], 300+FONT_HEIGHT*3),
+]
+buyMaxLine = sellPanelObject(30+descriptionPanel[0], 300+FONT_HEIGHT*4)
+sellAllLine = sellPanelObject(30+descriptionPanel[0], 300+FONT_HEIGHT*5)
+
 highlightFrame = sellPanelObject(-950,-950,layer=-1,image=highlightFrameImage)
 SELL_PANEL_PRICE_LIST = {
     "millstone": 75,
@@ -944,21 +1213,20 @@ SELL_PANEL_PRICE_LIST = {
 BUY_PANEL_PRICE_LIST = {
     "wheat seeds": 1,
     "farmland": 30,
-    "wood ash": 10,
+    "wood ash": 20,
     "bucket of water": 10,
     "millstone": 100,
     "bowl": 75,
     "brick oven": 500,
+    "wood": 5
 }
 
-# create walls of the screen
-rightWall = obstacle(-40,0,width=40,height=HEIGHT+40)
-leftWall = obstacle(WIDTH,0,width=40,height=HEIGHT+40)
-topWall = obstacle(-40,-40,width=WIDTH+40,height=40)
-bottomWall = obstacle(-40,HEIGHT,width=WIDTH+40,height=40)
+entity(0,0,image=renderText("бурундук", "black"))
 
 KEY_BINDS = {
-    pygame.K_ESCAPE: lambda: globals().__setitem__("sellPanelOpened",False)
+    pygame.K_ESCAPE: lambda: globals().__setitem__("sellPanelOpened",False),
+    pygame.K_RIGHT: lambda: inventory.changePage("right"),
+    pygame.K_LEFT: lambda: inventory.changePage("left")
 }
 
 NUMBERS = {
@@ -1026,18 +1294,12 @@ def mouseControl():
                 elif selectedInvSlot == woodAsh.slot and hasattr(hoverField, "fertilized") and not hoverField.fertilized:
                     hoverField.fertilize()
                     inventory.remove(woodAsh)
-                elif selectedInvSlot == millstone.slot and hoverField is None and 0 <= mousey//BLOCK_SIZE < 7 and 0 <= mousex//BLOCK_SIZE <= 12 and canPressAgain:
-                    if millstone in inventory.items:
-                        millstoneMachine(mousex//BLOCK_SIZE*BLOCK_SIZE,mousey//BLOCK_SIZE*BLOCK_SIZE)
-                        inventory.remove(millstone)
-                        canPressAgain = False
-                elif selectedInvSlot == bowl.slot and hoverField is None and 0 <= mousey//BLOCK_SIZE <= 6 and 0 <= mousex//BLOCK_SIZE <= 12 and canPressAgain:
-                    bowlMachine(mousex//BLOCK_SIZE*BLOCK_SIZE,mousey//BLOCK_SIZE*BLOCK_SIZE)
-                    inventory.remove(bowl)
-                    canPressAgain = False
-                elif selectedInvSlot == brickOven.slot and hoverField is None and 0 <= mousey//BLOCK_SIZE <= 6 and 0 <= mousex//BLOCK_SIZE <= 12 and canPressAgain:
-                    brickOvenMachine(mousex//BLOCK_SIZE*BLOCK_SIZE,mousey//BLOCK_SIZE*BLOCK_SIZE)
-                    inventory.remove(brickOven)
+                elif selectedInvSlot == waterBucket.slot and hasattr(hoverField, "wet") and not hoverField.wet:
+                    hoverField.makeWet()
+                    inventory.remove(waterBucket)
+                elif selectedInvSlot.item is not None and selectedInvSlot.item.machineClass is not None and hoverField is None and 0 <= mousey//BLOCK_SIZE < 7 and 0 <= mousex//BLOCK_SIZE <= 12 and canPressAgain:
+                    selectedInvSlot.item.machineClass(mousex//BLOCK_SIZE*BLOCK_SIZE,mousey//BLOCK_SIZE*BLOCK_SIZE)
+                    inventory.remove(selectedInvSlot.item)
                     canPressAgain = False
             else:
                 for m in machines:
@@ -1047,9 +1309,18 @@ def mouseControl():
         if 0 < mousex < WIDTH and 560 < mousey < HEIGHT:
             # in inv panel
             for s in slots:
-                s:slot
                 if s.getRect().collidepoint((mousex,mousey)):
                     selectedInvSlot = s
+                    return
+
+            if rightButtonEnt.getRect().collidepoint((mousex,mousey)) and canPressAgain:
+                inventory.changePage("right")
+                canPressAgain = False
+
+            if leftButtonEnt.getRect().collidepoint((mousex,mousey)) and canPressAgain:
+                inventory.changePage("left")                
+                canPressAgain = False
+
         if not sellPanelOpened:
             # in screen
             hoverField = findFieldByCoords(mousex,mousey)
@@ -1059,7 +1330,9 @@ def mouseControl():
                         m.onLeftClick()
                         break
             if not justExited:
-                breakPlant(hoverField)
+                breakPlant(hoverField)            
+            if farmer.getRect().collidepoint(mousex,mousey):
+                showSellPanel()
         else:
             # in sell panel
             for i in sellPanelItems:
@@ -1075,9 +1348,7 @@ def mouseControl():
                         canPressAgain = False
                         break
 
-            
-        if farmer.getRect().collidepoint(mousex,mousey):
-            showSellPanel()
+
 
     elif not any(mouse):
         canPressAgain = True
@@ -1106,8 +1377,14 @@ def control():
     keys = pygame.key.get_pressed()
 
     for k,action in KEY_BINDS.items():
-        if keys[k]:
+        if keys[k] and canTypeAgain:
             action()
+            canTypeAgain = False
+
+    if not sellPanelOpened:
+        for key,num in NUMBERS.items():
+            if keys[key]:
+                inventory.changePage(num)
 
     # input
     if actionOnInputEnd is not None and canTypeAgain:
@@ -1177,13 +1454,14 @@ def update():
     for m in machines:
         m.onTick()
 
-inventory.add(waterBucket,1)
-inventory.add(bowl,1 )
-inventory.add(flour,1)
-inventory.add(wheatSeeds,100)
+inventory.add(woodAsh,100)
+inventory.add(brickOven,1 )
+inventory.add(dough,10)
+inventory.add(wood,100)
 selectedInvSlot = list(inventory.items.keys())[0].slot
 screen.fill("white")
 while running:
+    print(inventory.page)
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False

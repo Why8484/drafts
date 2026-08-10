@@ -20,4 +20,4 @@ def remove_prefix(folder_path, prefix):
             os.rename(file_path, new_path)
             print(f"Renamed: '{filename}' -> '{new_name}'")
 
-remove_prefix(r"assets\\progressBar2","pixil-frame-")
+remove_prefix(r"assets\\bowlStick","pixil-frame-")

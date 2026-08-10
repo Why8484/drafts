@@ -6,8 +6,15 @@ pygame.init()
 screen = pygame.display.set_mode((1280, 720))
 clock = pygame.time.Clock()
 running = True
-font = pygame.font.SysFont("comicsansms",88)
-surf = font.render("я бурундук",False, (0,0,0))
+
+surf = pygame.Surface((100,40),flags=pygame.SRCALPHA)
+surf.fill((0,0,0,0))
+pygame.draw.ellipse(surf, (0,0,0,140), (0,0,100,40))
+pygame.draw.ellipse(surf, (0,0,0,180), (5,5,90,30))
+pygame.draw.ellipse(surf, (0,0,0,200), (10,10,80,20))
+pygame.draw.ellipse(surf, (0,0,0,225), (15,15,70,10))
+# pygame.draw.ellipse(surf, (0,0,0,240), (20,20,80,20))
+# pygame.draw.ellipse(surf, (0,0,0,255), (25,25,70,10))
 
 while running:
     # poll for events
@@ -17,10 +24,12 @@ while running:
             running = False
 
     # fill the screen with a color to wipe away anything from last frame
-    screen.fill("purple")
+    screen.fill("white")
 
     # RENDER YOUR GAME HERE
-    screen.blit(surf,(300,300))
+    screen.blit(surf,(100,100))
+    pygame.image.save(surf, "assets\\shadow.png")
+
     # flip() the display to put your work on screen
     pygame.display.flip()
 

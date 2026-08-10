@@ -25,7 +25,6 @@ bigFont = pygame.font.Font(r"assets\font.ttf",BIG_FONT_HEIGHT)
 mediumFont = pygame.font.Font(r"assets\font.ttf", 44)
 running = True
 updateFrame = True
-selectedSellableItem = None
 newFarmlandCreated = False
 canPressAgain = True
 inputValue = ""
@@ -34,6 +33,26 @@ actionOnInputEnd = None
 canTypeAgain = True
 selectedInvSlot = None
 justExited = False
+sineWave = [0.0, 0.087, 0.174, 0.259, 0.342, 0.423, 0.5, 0.574, 0.643, 0.707, 0.766, 0.819, 0.866, 0.906, 0.94, 0.966,
+            0.985, 0.996, 1.0, 0.996, 0.985, 0.966, 0.94, 0.906, 0.866, 0.819, 0.766, 0.707, 0.643, 0.574, 0.5, 0.423, 0.342,
+            0.259, 0.174, 0.087, 0.0]
+
+
+def inputValueToInt():
+    global inputValue
+
+    if inputValue == "" or inputValue == "-":
+        return 0
+
+    return int(inputValue)
+
+def measureBlockDistance(x1,y1,x2,y2):
+    x1 = x1//BLOCK_SIZE
+    x2 = x2//BLOCK_SIZE
+    y1 = y1//BLOCK_SIZE
+    y2 = y2//BLOCK_SIZE
+    
+    return (abs(x1-x2)**2+abs(y1-y2)**2)*(1/2)
 
 def renderText(text:str,color):
     """Returns a surface of rendered text."""
@@ -129,21 +148,33 @@ buy1Image = loadImage("buy1.png")
 buyCustomImage = loadImage("buyCustom.png")
 buyMaxImage = loadImage("buyMax.png")
 woodAshImage = loadImage("woodAsh.png")
-fertilizedSoilImage = loadImage("fertilizedSoil.png")
-millstoneImage = loadImage("millstoneFull.png")
 progressBarSequence = loadFromFolder("progressBar")
 flourImage = loadImage("flour.png")
 waterBucketImage = loadImage("waterBucket.png")
 bowlImage = loadImage("bowl.png")
 doughImage = loadImage("dough.png")
-brickOvenImage = loadImage("brickOven.png")
 breadImage = loadImage("bread.png")
 charcoalImage = loadImage("charcoal.png")
 woodImage = loadImage("wood.png")
+fertilizedSoilImage = loadImage("fertilizedSoil.png")
 wetSoilImage = loadImage("wetSoil.png")
 fertilizedWetSoilImage = loadImage("fertilizedWetSoil.png")
 rightButton = loadImage("rightButton.png")
 leftButton = loadImage("leftButton.png")
+millstoneImage = loadImage("millstoneFull.png")
+topMillstoneSequence = loadFromFolder("topMillstoneSpin")
+topMillstoneImage = loadImage("topMillstone.png")
+bottomMillstoneImage = loadImage("bottomMillstone.png")
+brickOvenImage = loadImage("brickOven.png")
+brickOvenBars = loadImage("brickOvenBars.png")
+brickOvenCookingSequence = loadFromFolder("brickOvenCooking")
+brickOvenCookedSequence = loadFromFolder("brickOvenCooked")
+bowlBack = loadImage("bowlBack.png")
+bowlFront = loadImage("bowlFront.png")
+bowlStickSequence = loadFromFolder("bowlStick")
+sellPanelBG = pygame.transform.scale_by(loadImage("sellPanelBG.png"),2)
+tileVariants = loadFromFolder("tileVariants")
+shadowImage = loadImage("shadow.png")
 
 def createDefaultImage(w,h,col1,col2):
     """Creates a default image: 2x2 grid of squares of two colors.
@@ -305,11 +336,8 @@ class area(entity):
         self.gridy = gridy
         self.object = None
 
-        super().__init__(x, y, -5,BLOCK_SIZE,BLOCK_SIZE,None)
+        super().__init__(x, y, -5,BLOCK_SIZE,BLOCK_SIZE,random.choice(tileVariants))
         areas.append(self)
-        entities.remove(self)
-    def draw(self):
-        return
 
 class field(entity):
     """Field object on which you can plant plants on. List: fields."""
@@ -332,14 +360,14 @@ class field(entity):
         fields.append(self)
 
     def fertilize(self):
-        """Increase multiplier to 3."""
-        self.multiplier = 3 if not self.wet else 3.5
+        """multiply multiplier by 2."""
+        self.multiplier *= 2
         self.image = fertilizedSoilImage if not self.wet else fertilizedWetSoilImage
         self.fertilized = True
 
     def makeWet(self):
-        """Increase multiplier to 1.8."""
-        self.multiplier = 1.8 if not self.fertilized else 3.5
+        """multipliy multiplier by 1.4."""
+        self.multiplier *= 1.4
         self.image = wetSoilImage if not self.fertilized else fertilizedWetSoilImage
         self.wet = True
 
@@ -601,6 +629,7 @@ class machine(entity):
     def __init__(self, x, y, image):
         super().__init__(x, y, 0,BLOCK_SIZE,BLOCK_SIZE,image)
         machines.append(self)
+        shadow(self.x-10,self.y+60)
 
     def onLeftClick(self):
         pass
@@ -611,13 +640,18 @@ class machine(entity):
     def onTick(self):
         pass
 
+    def draw(self, surf=screen):
+        super().draw(surf)
+
 class millstoneMachine(machine):
     """Millstone."""
     def __init__(self, x, y):
         super().__init__(x, y, millstoneImage)
         self.holdStart = None
         self.holdTime = 0
-        self.timeToComplete = 0.1
+        self.timeToComplete = 10
+        self.animIndex = 0
+        self.heightIndex = 0
         barX,barY = self.x-5,self.y-15
         if self.x == 0:
             barX = 0
@@ -630,6 +664,8 @@ class millstoneMachine(machine):
             wheatBundle: flour,
             charcoal: woodAsh
         }
+        self.animate = False
+        self.ticks = 0
         self.completed = False
     def onLeftClick(self):
         if self.holdStart is None and not self.completed:
@@ -643,22 +679,39 @@ class millstoneMachine(machine):
             self.empty = False
             self.itemIn = selectedInvSlot.item
             inventory.remove(selectedInvSlot.item)
+            self.prBar.show()
 
 
     def onTick(self):
+        # apply animations
+
         mouse = pygame.mouse.get_pressed()
         mousex,mousey = pygame.mouse.get_pos()
+
+        self.animate = False
+        if mouse[0] and self.getRect().collidepoint((mousex,mousey)):
+            self.animate = True
+        if self.animate:
+            if self.ticks % 36 == 0:
+                self.animIndex += 1
+                if self.animIndex > len(topMillstoneSequence)-1:
+                    self.animIndex = 0
+            if self.ticks % 6 == 0:
+                self.heightIndex += 1
+                if self.heightIndex > len(sineWave)-1:
+                    self.heightIndex = 0
+
+
         if mouse[2] and self.getRect().collidepoint((mousex,mousey)):
             self.onRightClick()
-        if not self.empty and self.prBar.hidden:
+        if self.empty:
+            self.prBar.hide()
+        else:
             self.prBar.show()
-        if ((not mouse[0] and self.getRect().collidepoint((mousex,mousey))) or self.empty) and not self.completed:
-            self.holdStart = None
-            if not self.prBar.hidden:
-                self.prBar.hide()
-            return
 
-        if self.holdStart is not None:
+
+
+        if self.holdStart is not None and self.animate:
             self.holdTime += dt
             if self.holdTime >= self.timeToComplete:
                 self.prBar.hide()
@@ -669,26 +722,54 @@ class millstoneMachine(machine):
 
         self.prBar.setAnimationFrame(int(self.holdTime/self.timeToComplete*len(progressBarSequence)))
 
+        self.ticks += 1
+
+    def draw(self, surf=screen):
+        if self.empty is True or self.itemIn is None:
+            return super().draw(surf)
+
+        # surf.blit(shadow, (self.x-10,self.y+60))
+        surf.blit(bottomMillstoneImage, (self.x,self.y))
+        smallItemIn = pygame.transform.scale_by(self.itemIn.image,0.6375)
+        surf.blit(smallItemIn, (self.x+8,self.y+21))
+        surf.blit(topMillstoneSequence[self.animIndex], (self.x-1,self.y-sineWave[self.heightIndex]*15))
+        
+
+
 class bowlMachine(machine):
     """Class for bowl."""
     def __init__(self, x, y):
         super().__init__(x, y, bowlImage)
         self.holdStart = None
         self.holdTime = 0
-        self.timeToComplete = 0.1
+        self.timeToComplete = 10
         barX,barY = self.x-5,self.y-15
         if self.x == 0:
             barX = 0
         if self.y == 0:
             barY = 0
         self.prBar = progressBar(barX,barY)
+        self.prBar.hide()
         self.empty = True
         self.itemsIn = []
         self.inputOutput = {
             (flour,waterBucket): dough,
             (waterBucket, flour): dough
         }
-        self.increaseHoldTime = True
+
+        self.ticks = 0
+        self.possibleItemLocations = []
+        self.animIndex = 0
+        self.addedTimeThisFrame = False
+        self.maxItems = 20
+
+        for xx in range(23,34):
+            for yy in range(35,39):
+                self.possibleItemLocations.append((xx,yy))
+
+        self.savedLoctaions = []
+        for i in range(self.maxItems):
+            self.savedLoctaions.append(self.possibleItemLocations[i])
 
     def onLeftClick(self):
         global canPressAgain
@@ -702,29 +783,39 @@ class bowlMachine(machine):
     def onRightClick(self):
         global canPressAgain
 
-        if not selectedInvSlot.item is None and canPressAgain:
+        if not selectedInvSlot.item is None and canPressAgain and len(self.itemsIn) < self.maxItems and self.holdTime == 0:
             self.empty = False
             self.itemsIn.append(selectedInvSlot.item)
             inventory.remove(selectedInvSlot.item)
+            self.prBar.show()
             canPressAgain = False
 
 
     def onTick(self):
         mouse = pygame.mouse.get_pressed()
         mousex,mousey = pygame.mouse.get_pos()
-        if mouse[2] and self.getRect().collidepoint((mousex,mousey)):
-            self.onRightClick()
+
+        if self.ticks % 10 == 0:
+            self.animIndex += 1
+            if self.animIndex > len(bowlStickSequence)-1:
+                self.animIndex = 0
+
+        # if mouse[2] and self.getRect().collidepoint((mousex,mousey)):
+        #     self.onRightClick()
         if not self.empty and self.prBar.hidden:
             self.prBar.show()
-        if ((not mouse[0] and self.getRect().collidepoint((mousex,mousey))) or self.empty):
+        if not (mouse[0] and self.getRect().collidepoint((mousex,mousey))):
+            self.addedTimeThisFrame = False
+            return
+        if not mouse[0] or self.empty:
             # hide bar and stop the charging of it if not mouse pressed or it's not on the object or it's empty
-            self.holdStart = None
             if not self.prBar.hidden:
                 self.prBar.hide()
             return
 
-        if self.holdStart is not None and self.increaseHoldTime:
+        if self.holdStart is not None:
             self.holdTime += dt
+            self.addedTimeThisFrame = True
             if self.holdTime >= self.timeToComplete:
                 self.prBar.hide()
                 if tuple(self.itemsIn) in self.inputOutput:
@@ -738,10 +829,46 @@ class bowlMachine(machine):
                 self.holdStart = None
                 self.holdTime = 0
 
-        if not self.increaseHoldTime:
-            self.increaseHoldTime = True
-
         self.prBar.setAnimationFrame(int(self.holdTime/self.timeToComplete*len(progressBarSequence)))
+
+        self.ticks += 1
+
+    def draw(self, surf=screen):
+        if self.empty:
+            return super().draw(surf)
+
+        # surf.blit(shadow, (self.x-10,self.y+60))
+        if self.addedTimeThisFrame:
+            surf.blit(bowlBack, (self.x,self.y))
+
+            if self.ticks % 10 == 0:
+                self.savedLoctaions = []
+                for i in self.itemsIn:
+                    smallI = pygame.transform.scale_by(i.image, 0.3)
+                    locationX,locationY = random.choice(self.possibleItemLocations)
+                    surf.blit(smallI, (locationX+self.x,locationY+self.y))
+                    self.savedLoctaions.append((locationX,locationY))
+            else:
+                for index, i in enumerate(self.itemsIn):
+                    smallI = pygame.transform.scale_by(i.image, 0.3)
+                    locationX,locationY = self.savedLoctaions[index]
+                    surf.blit(smallI, (locationX+self.x,locationY+self.y))
+
+            surf.blit(bowlStickSequence[self.animIndex],(self.x,self.y))
+            surf.blit(bowlFront,(self.x,self.y))
+        else:
+            surf.blit(bowlBack, (self.x,self.y))
+            for index,i in enumerate(self.itemsIn):
+                smallI = pygame.transform.scale_by(i.image, 0.3)
+                locationX,locationY = self.possibleItemLocations[index]
+                surf.blit(smallI, (locationX+self.x,locationY+self.y))
+            surf.blit(bowlStickSequence[0],(self.x,self.y))
+            surf.blit(bowlFront,(self.x,self.y))
+
+
+
+
+
 
 class brickOvenMachine(machine):
     def __init__(self, x, y):
@@ -750,7 +877,7 @@ class brickOvenMachine(machine):
             # all items that you're able to put in an oven. the negatice value represents the item smelting and the positive the fuel.
             # It also represents how much fuel does a smeltable use or how much power the fuel can give.
             dough: -5,
-            wood: (-3,5),
+            wood: (-4,5),
             charcoal: 10,
         }
 
@@ -765,6 +892,9 @@ class brickOvenMachine(machine):
         self.fuelLeft = 0
         self.holdTime = 0
 
+        self.animIndex = 0
+        self.currentSequence = None
+        self.ticks = 0
 
         barX,barY = self.x-5,self.y-15
         if self.x == 0:
@@ -817,6 +947,16 @@ class brickOvenMachine(machine):
             return
 
     def onTick(self):
+        if self.currentSequence == brickOvenCookingSequence and self.ticks % 10 == 0:
+            self.animIndex += 1
+            if self.animIndex > len(self.currentSequence)-1:
+                self.animIndex = 0
+
+        if self.currentSequence == brickOvenCookedSequence and self.ticks % 15 == 0:
+                    self.animIndex += 1
+                    if self.animIndex > len(self.currentSequence)-1:
+                        self.animIndex = 0
+
         mouse = pygame.mouse.get_pressed()
         pos = pygame.mouse.get_pos()
         if mouse[2] and self.x < pos[0] < self.x+self.width and self.y < pos[1] < self.y+self.height:
@@ -835,6 +975,8 @@ class brickOvenMachine(machine):
                 self.fuelBar.hide()
                 self.fuelLeft = 0
             if self.holdTime > abs(self.MaxItemPower):
+                self.animIndex = 0
+                self.currentSequence = brickOvenCookedSequence
                 if self.itemIn in self.produce:
                     self.producedItem = self.produce[self.itemIn]
                     self.itemIn = None  
@@ -848,13 +990,39 @@ class brickOvenMachine(machine):
         if self.fuelIn is not None:
             self.fuelBar.setAnimationFrame(int(self.fuelLeft/self.MaxFuel*len(progressBarSequence)))
 
+        self.ticks += 1
+
+    def draw(self, surf=screen):
+        if self.itemIn is None and self.fuelIn is None:
+            return super().draw(surf)
+
+        # surf.blit(shadow, (self.x-10,self.y+60))
+        if self.producedItem is None and self.itemIn is not None and self.fuelIn is not None:
+            self.currentSequence = brickOvenCookingSequence
+            surf.blit(self.currentSequence[self.animIndex], (self.x,self.y-40))
+        elif self.producedItem is not None:
+            self.currentSequence = brickOvenCookedSequence
+            surf.blit(self.currentSequence[self.animIndex], (self.x,self.y-40))
+        else:
+            surf.blit(brickOvenImage, (self.x,self.y))
+        if self.fuelIn is not None:
+            smallFuelImage = pygame.transform.scale_by(self.fuelIn.image, 0.2)
+            surf.blit(smallFuelImage, (self.x+16,self.y+57))
+        surf.blit(brickOvenBars, (self.x,self.y))
+        if self.itemIn is not None:
+            smallItemImage = pygame.transform.scale_by(self.itemIn.image, 0.2375)
+            surf.blit(smallItemImage, (self.x+16,self.y+35))
+        if self.itemIn is None and self.producedItem is not None:
+            smallItemImage = pygame.transform.scale_by(self.producedItem.image, 0.2375)
+            surf.blit(smallItemImage, (self.x+16,self.y+35))
+
 class progressBar(entity):
     """Class for progress bars."""
     def __init__(self, x, y):
         super().__init__(x, y, 5, 90,10,progressBarSequence[0])
         self.trackedValue = 0
         self.index = 0
-        self.drawCopy = None
+        self.drawCopy = self.draw
         self.hidden = False
 
     def changeNextFrame(self):
@@ -872,19 +1040,21 @@ class progressBar(entity):
         self.image = progressBarSequence[self.index]
 
     def hide(self):
-        self.drawCopy = self.draw
         self.draw = self.emptyFunc
         self.hidden = True
 
     def show(self):
-        if self.drawCopy is None:
-            return
-
         self.draw = self.drawCopy
         self.hidden = False
 
     def emptyFunc(self):
         return
+
+class shadow(entity):
+    """Class for shadows of the objects. List: shadows"""
+    def __init__(self, x, y):
+        super().__init__(x, y, -3, 100, 40, shadowImage)
+        shadows.append(self)
 
 # lists
 entities:list[entity] = []
@@ -898,6 +1068,7 @@ sellPanelItems:list[sellPanelItem] = []
 sellPanelButtons:list[sellPanelButton] = []
 machines:list[machine] = []
 invControlButtons:list[entity] = []
+shadows: list[shadow] = []
 
 # create slots
 for page in range(6):
@@ -1028,7 +1199,7 @@ entities.remove(rightButtonEnt)
 entities.remove(leftButtonEnt)
 
 # sell panel things
-sellPanelItem(60,80,"wheat bundle",wheatBundle, image=wheatBundleImage) # wheat
+selectedSellableItem = sellPanelItem(60,80,"wheat bundle",wheatBundle, image=wheatBundleImage) # wheat
 sellPanelItem(160,80,"wheat seeds",wheatSeeds, image=wheatSeedsImage, buyable=True) # seeds
 sellPanelItem(260,80,"farmland", farmland, image=soilImage, buyable=True, sellable=False) # farmland
 sellPanelItem(360, 80, "wood ash", woodAsh, image=woodAshImage, buyable=True, sellable=False) # wood ash
@@ -1040,9 +1211,7 @@ sellPanelItem(360,180, "dough", dough, image=doughImage) # dough
 sellPanelItem(460,180, "brick oven", brickOven, image=brickOvenImage, buyable=True, sellable=True) # brick oven
 sellPanelItem(60, 280, "bread", bread, sellable=True, buyable=False, image=breadImage) # bread
 sellPanelItem(160, 280, "wood", wood, buyable=True, sellable=False, image=woodImage) # wood
-lineSurf = pygame.Surface((10,720))
-pygame.draw.line(lineSurf,"black",(5,0),(5,720),10)
-sellPanelObject(640,0,image=lineSurf)
+sellPanelObject(0,0,-1,image=sellPanelBG)
 
 def sellCheck():
     global selectedSellableItem
@@ -1062,7 +1231,6 @@ def buyCheck(amt=1):
     global selectedSellableItem
 
     amt = int(amt)
-
     if selectedSellableItem is None:
         return False
     if not selectedSellableItem.buyable:
@@ -1126,7 +1294,10 @@ def buyMax():
 def sellCustom():
     global selectedSellableItem,actionOnInputEnd,inputValue
 
-    def sellCutsomAmt(amt):
+    if not selectedSellableItem.sellable:
+        return
+
+    def sellCustomAmt(amt):
         global actionOnInputEnd,inputValue
 
         if not sellCheck():
@@ -1140,13 +1311,16 @@ def sellCustom():
         inventory.items[selectedSellableItem.item] -= amt
         actionOnInputEnd = None
 
-    actionOnInputEnd = sellCutsomAmt
+    actionOnInputEnd = sellCustomAmt
     inputValue = "-"
     selectedSellableItem.select()
 
 
 def buyCustom():
     global actionOnInputEnd,inputValue
+
+    if not selectedSellableItem.buyable:
+        return
 
     def buyCustomAmt(amt):
         global actionOnInputEnd
@@ -1198,6 +1372,7 @@ sellPanelObject(30+descriptionPanel[0], 300+FONT_HEIGHT*3),
 ]
 buyMaxLine = sellPanelObject(30+descriptionPanel[0], 300+FONT_HEIGHT*4)
 sellAllLine = sellPanelObject(30+descriptionPanel[0], 300+FONT_HEIGHT*5)
+buyCustomLine = sellPanelObject(912,300)
 
 highlightFrame = sellPanelObject(-950,-950,layer=-1,image=highlightFrameImage)
 SELL_PANEL_PRICE_LIST = {
@@ -1220,8 +1395,6 @@ BUY_PANEL_PRICE_LIST = {
     "brick oven": 500,
     "wood": 5
 }
-
-entity(0,0,image=renderText("бурундук", "black"))
 
 KEY_BINDS = {
     pygame.K_ESCAPE: lambda: globals().__setitem__("sellPanelOpened",False),
@@ -1271,7 +1444,7 @@ def placePlant(field):
 
 def mouseControl():
     """Covers everything that is activated with mouse."""
-    global canPressAgain,newFarmlandCreated,selectedInvSlot,justExited
+    global canPressAgain,newFarmlandCreated,selectedInvSlot,justExited,actionOnInputEnd
 
     mouse = pygame.mouse.get_pressed()
     mousex,mousey = pygame.mouse.get_pos()
@@ -1285,7 +1458,11 @@ def mouseControl():
                     for m in machines:
                         if m.x//BLOCK_SIZE == fieldx and m.y//BLOCK_SIZE == fieldy:
                             return
-                    field(fieldx,fieldy)
+                    newField = field(fieldx,fieldy)
+                    for m in machines:
+                        if isinstance(m, brickOvenMachine) and measureBlockDistance(newField.x,newField.y,m.x,m.y) <= 1:
+                            newField.multiplier = 0.5
+    
                     inventory.remove(farmland)
                     newFarmlandCreated = True
             elif not newFarmlandCreated :
@@ -1298,13 +1475,14 @@ def mouseControl():
                     hoverField.makeWet()
                     inventory.remove(waterBucket)
                 elif selectedInvSlot.item is not None and selectedInvSlot.item.machineClass is not None and hoverField is None and 0 <= mousey//BLOCK_SIZE < 7 and 0 <= mousex//BLOCK_SIZE <= 12 and canPressAgain:
-                    selectedInvSlot.item.machineClass(mousex//BLOCK_SIZE*BLOCK_SIZE,mousey//BLOCK_SIZE*BLOCK_SIZE)
-                    inventory.remove(selectedInvSlot.item)
-                    canPressAgain = False
-            else:
-                for m in machines:
-                    if m.getRect().collidepoint((mousex,mousey)):
-                        m.onRightClick()
+                    if not (int(mousex//BLOCK_SIZE*BLOCK_SIZE),int(mousey//BLOCK_SIZE*BLOCK_SIZE)) in [(ma.x,ma.y) for ma in machines]:
+                        selectedInvSlot.item.machineClass(mousex//BLOCK_SIZE*BLOCK_SIZE,mousey//BLOCK_SIZE*BLOCK_SIZE)
+                        inventory.remove(selectedInvSlot.item)
+                        canPressAgain = False
+
+            for m in machines:
+                if m.getRect().collidepoint((mousex,mousey)):
+                    m.onRightClick()
     if mouse[0] and 0 < mousex < WIDTH and 0 < mousey < HEIGHT:
         if 0 < mousex < WIDTH and 560 < mousey < HEIGHT:
             # in inv panel
@@ -1355,6 +1533,12 @@ def mouseControl():
         newFarmlandCreated = False
         justExited = False
 
+    if any(mouse) and (not sellCustomButton.getRect().collidepoint((mousex,mousey)) or not buyCustomButton.getRect().collidepoint((mousex,mousey))) and canPressAgain:
+        actionOnInputEnd = None
+        canPressAgain = False
+
+
+
 def showSellPanel():
     """Shows the 'sell and buy' panel."""
     global sellPanelOpened
@@ -1372,7 +1556,7 @@ backButton.action = hideSellPanel
 
 def control():
     """Covers the control of the game."""
-    global inputValue,canTypeAgain
+    global inputValue,canTypeAgain,buyCustomLine
 
     keys = pygame.key.get_pressed()
 
@@ -1393,11 +1577,9 @@ def control():
                 if inputValue == "-":
                     inputValue = str(num)
                     canTypeAgain = False
-                    break
-
-                inputValue = inputValue + str(num)
-                canTypeAgain = False
-                break
+                else:
+                    inputValue = inputValue + str(num)
+                    canTypeAgain = False
 
         if keys[pygame.K_RETURN]:
             actionOnInputEnd(inputValue)
@@ -1405,8 +1587,22 @@ def control():
             canTypeAgain = False
 
         if keys[pygame.K_BACKSPACE]:
-            inputValue = inputValue[:-1]
-            canTypeAgain = False
+            if keys[pygame.K_LCTRL]:
+                inputValue = "-"
+                canTypeAgain = False
+            else:
+                inputValue = inputValue[:-1]
+                canTypeAgain = False
+
+    if actionOnInputEnd is not None:
+        if actionOnInputEnd.__name__ == "sellCustomAmt":
+            buyCustomLine.image = renderText(actionOnInputEnd.__name__[:-9] + " x" + inputValue + " for " + str(SELL_PANEL_PRICE_LIST[selectedSellableItem.name]*inputValueToInt()), "black")
+        elif actionOnInputEnd.__name__ == "buyCustomAmt":
+            buyCustomLine.image = renderText(actionOnInputEnd.__name__[:-9] + " x" + inputValue + " for " + str(BUY_PANEL_PRICE_LIST[selectedSellableItem.name]*inputValueToInt()), "black")
+    else:
+        buyCustomLine.image = renderText("","black")
+    
+
 
     # reset can type again
     if not any(keys):
@@ -1443,8 +1639,6 @@ def render():
         for s in sellPanelObjects:
             s.draw()
 
-        if not inputValue == "":
-            sellPanel.blit(renderBigText(inputValue, "white"),typingPosition)
         screen.blit(sellPanel,(0,0))
 
 def update():
@@ -1454,14 +1648,16 @@ def update():
     for m in machines:
         m.onTick()
 
-inventory.add(woodAsh,100)
-inventory.add(brickOven,1 )
-inventory.add(dough,10)
-inventory.add(wood,100)
+inventory.add(waterBucket,10)
+inventory.add(flour, 10)
+inventory.add(bowl,10)
+inventory.add(wheatBundle,10)
+inventory.add(millstone,10)
+
+
 selectedInvSlot = list(inventory.items.keys())[0].slot
 screen.fill("white")
 while running:
-    print(inventory.page)
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False

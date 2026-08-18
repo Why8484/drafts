@@ -3,6 +3,9 @@ from  time import time
 import random
 import os
 import math
+import json
+from copy import copy
+import ast
 
 pygame.init()
 HEIGHT = 720
@@ -32,11 +35,28 @@ typingPosition = 780,100
 actionOnInputEnd = None
 canTypeAgain = True
 selectedInvSlot = None
+dt = 0
 justExited = False
 sineWave = [0.0, 0.087, 0.174, 0.259, 0.342, 0.423, 0.5, 0.574, 0.643, 0.707, 0.766, 0.819, 0.866, 0.906, 0.94, 0.966,
             0.985, 0.996, 1.0, 0.996, 0.985, 0.966, 0.94, 0.906, 0.866, 0.819, 0.766, 0.707, 0.643, 0.574, 0.5, 0.423, 0.342,
             0.259, 0.174, 0.087, 0.0]
 
+
+def isJSONable(obj) -> bool:
+    """Checks if the item is JSON serializable."""
+    try:
+        json.dumps(obj)
+        return True
+    except:
+        return False
+
+def eliminateNotJSONables(objects: list|dict|tuple) -> list|dict|tuple:
+    """Eliminates every not JSONable object from iterable param objects."""
+    valDictCopy = copy(objects.__dict__)
+    for attribute, val in objects.__dict__.items():
+        if not isJSONable(val):
+            valDictCopy.pop(attribute)
+    return valDictCopy
 
 def inputValueToInt():
     global inputValue
@@ -175,6 +195,63 @@ bowlStickSequence = loadFromFolder("bowlStick")
 sellPanelBG = pygame.transform.scale_by(loadImage("sellPanelBG.png"),2)
 tileVariants = loadFromFolder("tileVariants")
 shadowImage = loadImage("shadow.png")
+
+
+def loadItemAtrribute(objDict, attrName):
+    """Loads object's atrribute if it should be equal to item class object. 
+    Rteurns none if it's equal to none."""
+
+    if objDict[attrName] is None:
+        return None
+    else:
+        return existingItems[objDict[attrName]["name"]]
+
+def isIterable(obj):
+    """Checks if the given object is iterable."""
+
+    try:
+        iter(obj)
+        return True
+    except TypeError:
+        return False
+    
+
+
+def loadGame():
+    """Loads the progress as you log in."""
+    with open("saveFile.txt", "r") as sf:
+        savedContext = sf.read()
+
+    objectDicts = []
+    saves = savedContext.split(";")
+
+    # inventory loading
+    invSave = saves[0]
+    if not invSave == "":            
+        invSave = ast.literal_eval(invSave)
+        for itemName, count, slotIndex in invSave:
+            inventory.add(existingItems[itemName], count, slotIndex)
+
+    # coins loading
+    coinsSave = saves[1] if len(saves) > 1 else ""
+    if not coinsSave == "":
+        coinsSave = int(coinsSave.removesuffix(";"))
+        inventory.coins = coinsSave
+
+    # fields and machines loading
+    objectStrings = saves[2:]
+    for objectStr in objectStrings:
+        objectStr = objectStr.replace("\n", "")
+        if objectStr == "":
+            continue
+
+        objectDicts.append(json.loads(objectStr))
+
+    for objectDict in objectDicts:
+        loadClassesDict[objectDict["class"]].loadObject(objectDict)
+    
+        
+
 
 def createDefaultImage(w,h,col1,col2):
     """Creates a default image: 2x2 grid of squares of two colors.
@@ -319,6 +396,32 @@ class entity:
     def getInvRect(self):
         return pygame.Rect(self.x,self.y+560, self.width,self.height)
 
+    def toJSON(self):
+        """Converts the instance of this class to a JSON string"""
+        jsonDict = self.__dict__
+        jsonDictCopy = copy(jsonDict)
+        for attr, value in jsonDictCopy.items():
+            if not isJSONable(value) and not hasattr(value, "__dict__") and not type(value) == list:
+                jsonDict.pop(attr) 
+            elif hasattr(value, "__dict__"):
+                jsonDict[attr] = eliminateNotJSONables(value)
+            elif isIterable(value) and not type(value) == tuple:
+                newValue = copy(value)
+                newValue.clear()
+                for obj in value:
+                    if hasattr(obj, "__dict__"):
+                        newValue.append(eliminateNotJSONables(obj))
+
+                jsonDict[attr] = newValue
+                    
+
+        jsonDict["class"] = str(self.__class__.__name__)
+        return json.dumps(jsonDict)
+
+    @classmethod
+    def loadObject(cls, objectDict):
+        pass
+
 class obstacle(entity):
     """Object that is a collider and is in colliders list. List: colliders."""
     def __init__(self, x, y, layer=0, width=0, height=0, image=None):
@@ -370,6 +473,21 @@ class field(entity):
         self.multiplier *= 1.4
         self.image = wetSoilImage if not self.fertilized else fertilizedWetSoilImage
         self.wet = True
+
+    @classmethod
+    def loadObject(cls, objectDict):
+        newField = field(objectDict["gridx"], objectDict["gridy"])
+        if objectDict["wet"]:
+            newField.makeWet()
+        if objectDict["fertilized"]:
+            newField.fertilize()
+        if objectDict["plant"] != None:
+            wheatDict = objectDict["plant"]
+            newWheat = wheat(newField)
+            newWheat.growthTime = wheatDict["growthTime"]
+            newWheat.phase  = wheatDict["phase"]
+            newWheat.timePlanted = wheatDict["timePlanted"]
+            newWheat.image = newWheat.growthSequence[newWheat.phase]
 
 class wheat(entity):
     """Wheat object that grows on certain field. List: plants."""
@@ -423,12 +541,13 @@ class inventory:
     LAST_PAGE = 6
 
     @classmethod
-    def add(cls,item,count):
+    def add(cls,item,count,putSlot="nextEmpty"):
         """
         Adds some amount of some item to the items dict.
         Params:
             item: item you wanna add.
             count: how many of these items you wanna add.
+            slot: the index of wanted slot in slots list. Will be next em0pty if left empty.
         Returns:
             none.
         """
@@ -439,7 +558,10 @@ class inventory:
             cls.items[item] += count
         else:
             cls.items[item] = count
-            emptySlot = slot.findNextEmpty()
+            if putSlot == "nextEmpty":
+                emptySlot = slot.findNextEmpty()
+            else:
+                emptySlot = slots[putSlot]
             emptySlot.item = item
             item.slot = emptySlot
         flickUpdateFrame()
@@ -519,7 +641,7 @@ class inventory:
 
 
 class item:
-    """Class for items that show up in the inventory space. List: none."""
+    """Class for items that show up in the inventory space. List: existingItems."""
     def __init__(self, image, name,layer=0,description="",machineClass=None):
         self.image = image
         self.machineClass = machineClass
@@ -527,6 +649,7 @@ class item:
         self.name = name
         self.slot = None
         self.description = description
+        existingItems[self.name] = self
     def draw(self,x,y):
         invPanel.blit(self.image,(x,y))
         self.title = renderText(self.name,"black")
@@ -643,6 +766,10 @@ class machine(entity):
     def draw(self, surf=screen):
         super().draw(surf)
 
+    def prepareForSaving(self):
+        pass
+        
+
 class millstoneMachine(machine):
     """Millstone."""
     def __init__(self, x, y):
@@ -733,6 +860,23 @@ class millstoneMachine(machine):
         smallItemIn = pygame.transform.scale_by(self.itemIn.image,0.6375)
         surf.blit(smallItemIn, (self.x+8,self.y+21))
         surf.blit(topMillstoneSequence[self.animIndex], (self.x-1,self.y-sineWave[self.heightIndex]*15))
+
+    def prepareForSaving(self):
+        self.itemIn = self.itemIn.name
+
+    @classmethod
+    def loadObject(cls, objectDict):
+        newMachine = millstoneMachine(objectDict["x"], objectDict["y"])
+        newMachine.holdStart = objectDict["holdStart"]
+        newMachine.holdTime = objectDict["holdTime"]
+        newMachine.itemIn = loadItemAtrribute(objectDict, "itemIn")
+        newMachine.empty = objectDict["empty"]
+        newMachine.animate = objectDict["animate"]
+        newMachine.ticks = objectDict["ticks"]
+        newMachine.completed = objectDict["completed"]
+
+
+    
         
 
 
@@ -789,7 +933,13 @@ class bowlMachine(machine):
             inventory.remove(selectedInvSlot.item)
             self.prBar.show()
             canPressAgain = False
+            self.resetSavedLocations()
 
+    def resetSavedLocations(self):
+        self.savedLoctaions = []
+        for _ in self.itemsIn:
+            locationX,locationY = random.choice(self.possibleItemLocations)
+            self.savedLoctaions.append((locationX,locationY))
 
     def onTick(self):
         mouse = pygame.mouse.get_pressed()
@@ -865,10 +1015,20 @@ class bowlMachine(machine):
             surf.blit(bowlStickSequence[0],(self.x,self.y))
             surf.blit(bowlFront,(self.x,self.y))
 
-
-
-
-
+    @classmethod
+    def loadObject(cls, objectDict):
+        newMachine = bowlMachine(objectDict["x"], objectDict["y"])
+        newMachine.holdStart = objectDict["holdStart"]
+        newMachine.holdTime = objectDict["holdTime"]
+        if not objectDict["itemsIn"]:
+            newMachine.itemsIn = []
+        else:
+            for itemIn in objectDict["itemsIn"]:
+                newMachine.itemsIn.append(existingItems[itemIn["name"]])
+        newMachine.empty = objectDict["empty"]
+        newMachine.ticks = objectDict["ticks"]
+        newMachine.prBar.setAnimationFrame(int(newMachine.holdTime/newMachine.timeToComplete*len(progressBarSequence)))
+        
 
 class brickOvenMachine(machine):
     def __init__(self, x, y):
@@ -905,8 +1065,8 @@ class brickOvenMachine(machine):
         self.fuelBar = progressBar(barX, self.y+72)
         self.prBar.hide()
         self.fuelBar.hide()
-        self.MaxFuel = 0
-        self.MaxItemPower = 0
+        self.maxFuel = 0
+        self.maxItemPower = 0
         self.justPutTheFuel = False
     def onRightClick(self):
         if self.producedItem is not None:
@@ -919,9 +1079,9 @@ class brickOvenMachine(machine):
                     inventory.remove(selectedInvSlot.item)
                     self.holdTime = 0
                     self.justPutTheFuel = True
-                    self.MaxItemPower = powerValue[0]
+                    self.maxItemPower = powerValue[0]
                 elif self.itemIn is not None and (self.fuelIn is None or self.fuelIn == selectedInvSlot.item) and not self.justPutTheFuel:
-                    self.MaxFuel = powerValue[1]
+                    self.maxFuel = powerValue[1]
                     self.fuelIn = selectedInvSlot.item
                     self.justPutTheFuel = True
                     inventory.remove(selectedInvSlot.item)
@@ -931,9 +1091,9 @@ class brickOvenMachine(machine):
                 self.itemIn = selectedInvSlot.item
                 inventory.remove(selectedInvSlot.item)
                 self.holdTime = 0
-                self.MaxItemPower = powerValue
+                self.maxItemPower = powerValue
             elif powerValue > 0 and self.fuelIn is None:
-                self.MaxFuel = powerValue
+                self.maxFuel = powerValue
                 self.fuelIn = selectedInvSlot.item
                 inventory.remove(selectedInvSlot.item)
                 self.fuelLeft = powerValue
@@ -974,7 +1134,7 @@ class brickOvenMachine(machine):
                 self.fuelIn = None
                 self.fuelBar.hide()
                 self.fuelLeft = 0
-            if self.holdTime > abs(self.MaxItemPower):
+            if self.holdTime > abs(self.maxItemPower):
                 self.animIndex = 0
                 self.currentSequence = brickOvenCookedSequence
                 if self.itemIn in self.produce:
@@ -985,10 +1145,7 @@ class brickOvenMachine(machine):
                     self.itemIn = None  
 
 
-        if self.holdTime > 0 and self.itemIn is not None:
-            self.prBar.setAnimationFrame(int(self.holdTime/abs(self.MaxItemPower)*len(progressBarSequence)))
-        if self.fuelIn is not None:
-            self.fuelBar.setAnimationFrame(int(self.fuelLeft/self.MaxFuel*len(progressBarSequence)))
+        self.updateProgressBars()
 
         self.ticks += 1
 
@@ -1015,6 +1172,26 @@ class brickOvenMachine(machine):
         if self.itemIn is None and self.producedItem is not None:
             smallItemImage = pygame.transform.scale_by(self.producedItem.image, 0.2375)
             surf.blit(smallItemImage, (self.x+16,self.y+35))
+
+    @classmethod
+    def loadObject(cls, objectDict):
+        newMachine = brickOvenMachine(objectDict["x"], objectDict["y"])
+        newMachine.holdTime = objectDict["holdTime"]
+        newMachine.fuelLeft = objectDict["fuelLeft"]
+        newMachine.animIndex = objectDict["animIndex"]
+        newMachine.currentSequence = objectDict["currentSequence"]
+        newMachine.maxFuel = objectDict["maxFuel"]
+        newMachine.maxItemPower = objectDict["maxItemPower"]
+        newMachine.itemIn = loadItemAtrribute(objectDict, "itemIn")
+        newMachine.fuelIn = loadItemAtrribute(objectDict, "fuelIn")
+        newMachine.ticks = objectDict["ticks"]
+        newMachine.updateProgressBars()
+    def updateProgressBars(self):
+        if self.holdTime > 0 and self.itemIn is not None:
+            self.prBar.setAnimationFrame(int(self.holdTime/abs(self.maxItemPower)*len(progressBarSequence)))
+        if self.fuelIn is not None:
+            self.fuelBar.setAnimationFrame(int(self.fuelLeft/self.maxFuel*len(progressBarSequence)))
+
 
 class progressBar(entity):
     """Class for progress bars."""
@@ -1069,6 +1246,7 @@ sellPanelButtons:list[sellPanelButton] = []
 machines:list[machine] = []
 invControlButtons:list[entity] = []
 shadows: list[shadow] = []
+existingItems:dict[str, item] = {}
 
 # create slots
 for page in range(6):
@@ -1337,6 +1515,13 @@ def buyCustom():
     inputValue = "-"
     selectedSellableItem.select()
 
+loadClassesDict = {
+    "field": field,
+    "brickOvenMachine": brickOvenMachine,
+    "bowlMachine": bowlMachine,
+    "millstoneMachine": millstoneMachine,
+}
+
 
 
 # buttons
@@ -1441,6 +1626,25 @@ def placePlant(field):
     if inventory.remove(wheatSeeds):
         wheat(field)
     flickUpdateFrame()
+
+
+def saveGame():
+    """Saves the game after you exit."""
+    invItems = []
+    for i,count in inventory.items.items():
+        invItems.append((i.name,count,slots.index(i.slot)))
+    
+    with open("saveFile.txt", "w") as saveFile:
+        saveFile.write(str(invItems) + ";" + "\n")
+
+    with open("saveFile.txt", "a+") as saveFile:
+        saveFile.write(str(inventory.coins) + ";" + "\n")
+        for f in fields:
+            saveFile.write(f.toJSON() + ";" + "\n")
+        for m in machines:
+            saveFile.write(m.toJSON() + ";" + "\n")
+
+
 
 def mouseControl():
     """Covers everything that is activated with mouse."""
@@ -1648,15 +1852,14 @@ def update():
     for m in machines:
         m.onTick()
 
+# starter pack
 inventory.add(waterBucket,10)
-inventory.add(flour, 10)
-inventory.add(bowl,10)
-inventory.add(wheatBundle,10)
-inventory.add(millstone,10)
-
+inventory.add(wheatSeeds, 1)
 
 selectedInvSlot = list(inventory.items.keys())[0].slot
 screen.fill("white")
+loadGame()
+
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -1671,5 +1874,7 @@ while running:
 
     clock.tick(MAX_FPS)
     dt = time() - start
+
+saveGame()
 
 pygame.quit()

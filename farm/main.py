@@ -23,6 +23,7 @@ GRID_WIDTH = int(WIDTH/BLOCK_SIZE) #16
 GRID_HEIGHT = int(HEIGHT/BLOCK_SIZE)  #9
 FONT_HEIGHT = 30
 BIG_FONT_HEIGHT = 66
+SLOTS_PER_PAGE = 5
 font = pygame.font.Font(r"assets\font.ttf",FONT_HEIGHT)
 bigFont = pygame.font.Font(r"assets\font.ttf",BIG_FONT_HEIGHT)
 mediumFont = pygame.font.Font(r"assets\font.ttf", 44)
@@ -640,6 +641,7 @@ class inventory:
         PageNum could also be equal to 'right'(changes the page to one directly to the 
         right of the current one)
         or 'left'(changes the page to one directly to the left of the current one)."""
+        global selectedInvSlot
 
         if pageNum == "right":
             cls.previousPage = cls.page
@@ -661,6 +663,8 @@ class inventory:
             cls.previousPage = cls.page
             cls.page = pageNum
             cls.applyPage()
+
+        selectedInvSlot = slots[(inventory.page-1) * SLOTS_PER_PAGE]
 
     @classmethod
     def applyPage(cls):
@@ -1692,7 +1696,7 @@ def placePlant(fieldUsed):
 
 def saveGame():
     """Saves the game after you exit."""
-    invItems = []
+    invItems = []   
     for i,count in inventory.items.items():
         invItems.append((i.name,count,slots.index(i.slot)))
     
@@ -1706,6 +1710,27 @@ def saveGame():
         for m in machines:
             saveFile.write(m.toJSON() + ";" + "\n")
 
+def mouseScroll(directionFactor:int) -> None:
+    """Covers mouse wheel controls."""
+    global selectedInvSlot,sellPanelOpened,selectedSellableItem
+
+    currentSlotIndex = slots.index(selectedInvSlot)
+    print(currentSlotIndex)
+    currentPageSlotIndexRange = [(inventory.page-1)*SLOTS_PER_PAGE, inventory.page*SLOTS_PER_PAGE-1]
+
+    if currentPageSlotIndexRange[0] <= currentSlotIndex + directionFactor <= currentPageSlotIndexRange[1]:
+        selectedInvSlot = slots[currentSlotIndex + directionFactor]
+    elif currentSlotIndex + directionFactor > currentPageSlotIndexRange[1]:
+        selectedInvSlot = slots[currentPageSlotIndexRange[0]]
+    else:
+        selectedInvSlot = slots[currentPageSlotIndexRange[1]]
+
+    if sellPanelOpened:
+        for spi in sellPanelItems:
+            if spi.item == selectedInvSlot.item:
+                selectedSellableItem = spi
+                selectedSellableItem.select()
+                break
 
 
 def mouseControl():
@@ -1932,6 +1957,9 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+        elif event.type == pygame.MOUSEWHEEL:
+            mouseScroll(event.y)
+
     start = time()
 
     control()

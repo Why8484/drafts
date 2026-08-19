@@ -1,1 +1,3 @@
-print("fdjkaslfnl"[2:223])
+a = 12
+b = 1
+print((a + b) % 5)

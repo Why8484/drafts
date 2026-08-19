@@ -35,6 +35,7 @@ typingPosition = 780,100
 actionOnInputEnd = None
 canTypeAgain = True
 selectedInvSlot = None
+DESCRIPTION_LINE_SYMBOLS = 50
 dt = 0
 justExited = False
 sineWave = [0.0, 0.087, 0.174, 0.259, 0.342, 0.423, 0.5, 0.574, 0.643, 
@@ -114,7 +115,22 @@ def displayLetterAmount(amt):
             if nDigits == 0:
                 returnValue = str(round(amt/n))
             return returnValue + letter
-        
+
+def nearestSpace(string: str, index: int) -> int:
+    """Finds the index of the nearest space to index given in string `string`.
+
+    Returns -1 if no space is found in the string.
+    """
+    spaces = [i for i, char in enumerate(string) if char == " "]
+    for s in spaces[:]:
+        if s < index:
+            spaces.remove(s)
+
+    if not spaces:
+        return -1
+
+    return min(spaces, key=lambda i: abs(i - index))
+
 def displayCoinsAmount():
     """Returns coin amount as 1M or 1K."""
 
@@ -550,7 +566,7 @@ class wheat(entity):
 
 class inventory:
     items = {}
-    coins = 9000000
+    coins = 1
     page = 1
     previousPage = 1
     LAST_PAGE = 6
@@ -653,11 +669,6 @@ class inventory:
         for s in slots:
             s.x += index*1280
 
-
-
-
-
-
 class item:
     """Class for items that show up in the inventory space. List: existingItems."""
     def __init__(self, image, name,layer=0,description="",machineClass=None):
@@ -668,10 +679,32 @@ class item:
         self.slot = None
         self.title = renderText(self.name,"black")
         self.description = description
+        self.divideDescription()
         existingItems[self.name] = self
+
     def draw(self,x,y):
         invPanel.blit(self.image,(x,y))
         invPanel.blit(self.title,(x+BLOCK_SIZE//2-self.title.get_width()//2,y+BLOCK_SIZE+10))
+
+    def divideDescription(self):
+        self.description = self.description.replace("\n", " ")
+        lines = []
+        previous = 0
+        lastChar = list(self.description)[-1]
+        for symbol in range(0,len(list(self.description)), DESCRIPTION_LINE_SYMBOLS):
+            lineEndIndex = nearestSpace(self.description, symbol+DESCRIPTION_LINE_SYMBOLS)
+            lines.append(self.description[previous:lineEndIndex])
+            previous = lineEndIndex
+
+        self.description = ""
+        for line in lines:
+            if lines.index(line) == len(lines)-1:
+                self.description = self.description + line
+                continue
+            self.description = self.description + line + "\n"
+
+
+        self.description = self.description + lastChar
 
 class slot:
     """Class for inventory slots. List: slots."""
@@ -1298,7 +1331,7 @@ for page in range(6):
 wheatSeeds = item(
     wheatSeedsImage,
     "wheat seeds",
-    description="""Small, golden grains ready to be sown into soil
+    description="""Small, golden grains ready to be planted into soil
 to grow wheat.""",
 )
 
@@ -1306,7 +1339,7 @@ wheatBundle = item(
     wheatBundleImage,
     "wheat bundle",
     description="""Treat every seed with care and it will reward you with this.
-A bundle of harvested wheat stalks, ready to be processed.""",
+A bundle of harvested wheat, ready to be processed.""",
 )
 
 farmland = item(
@@ -1321,7 +1354,7 @@ woodAsh = item(
     woodAshImage,
     "wood ash",
     description="""The powder left behind after burning wood, useful as
-fertilizer.""",
+fertilizer. With it, wheat grows 2 times faster than usual.""",
 )
 
 millstone = item(
@@ -1349,15 +1382,15 @@ waterBucket = item(
     "bucket of water",
     description="""A bucket filled with clean water, straight from a nearby
 river, essential for life.
-You can see your reflection in it more clearer than in a
-mirror!""",
+You can see your reflection in it more clearly than in a
+mirror! Use it on the field and wheat there will grow 1.4 times faster!""",
 )
 
 bowl = item(
     bowlImage,
     "bowl",
     description="""A simple tool, but how useful is it! Used for combining
-ingridients.""",
+ingridients. Mix flour and water in it, to form dough.""",
     machineClass=bowlMachine,
 )
 
@@ -1371,8 +1404,8 @@ you knead, which is waiting for the heat of the oven.""",
 brickOven = item(
     brickOvenImage,
     "brick oven",
-    description="""An oven assembled using bricks. Built to retain high heat
-for baking bread.""",
+    description="""An oven assembled using bricks. Built
+for baking bread. A very powerful machine, just sometimes needs a lot of fuel.""",
     machineClass=brickOvenMachine,
 )
 
@@ -1404,9 +1437,6 @@ wood ash using millstone.""",
 for gy in range(GRID_HEIGHT):
     for gx in range(GRID_WIDTH):
         area(gx,gy)
-
-# test fields
-field1 = field(1,1)
 
 farmer = entity(1200,360,image=farmerImage)
 rightButtonEnt = entity(990,50,image=rightButton)
@@ -1554,7 +1584,7 @@ loadClassesDict = {
     "millstoneMachine": millstoneMachine,
 }
 
-
+field(1,1)
 
 # buttons
 sell1Button = sellPanelButton(60,560-192,image=sell1ButtonImage)
@@ -1687,7 +1717,7 @@ def mouseControl():
 
     if mouse[2] and 0 < mousex < WIDTH and 0 < mousey < HEIGHT:
         if not sellPanelOpened:
-            hoverField:field = findFieldByCoords(mousex,mousey)
+            hoverField:field = findFieldByCoords((mousex,mousey))
             if hoverField is None and farmland in inventory.items and selectedInvSlot == farmland.slot:
                 fieldx,fieldy = mousex//BLOCK_SIZE,mousey//BLOCK_SIZE
                 if 0 <= fieldx <= 12 and 0 <= fieldy <= 6:
@@ -1742,7 +1772,7 @@ def mouseControl():
 
         if not sellPanelOpened:
             # in screen
-            hoverField = findFieldByCoords(mousex,mousey)
+            hoverField = findFieldByCoords((mousex,mousey))
             if hoverField is None:
                 for m in machines:
                     if m.getRect().collidepoint((mousex,mousey)):
@@ -1894,11 +1924,7 @@ def update():
     for m in machines:
         m.onTick()
 
-# starter pack
-inventory.add(waterBucket,10)
-inventory.add(wheatSeeds, 1)
-
-selectedInvSlot = list(inventory.items.keys())[0].slot
+selectedInvSlot = slots[0]
 screen.fill("white")
 loadGame()
 

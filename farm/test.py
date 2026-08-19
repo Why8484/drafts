@@ -1,2 +1,1 @@
-a = [1,2,43,56,7,8,9]
-print(a[2:])
+print("fdjkaslfnl"[2:223])

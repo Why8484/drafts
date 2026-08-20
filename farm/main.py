@@ -25,6 +25,7 @@ GRID_HEIGHT = int(HEIGHT/BLOCK_SIZE)  #9
 FONT_HEIGHT = 30
 BIG_FONT_HEIGHT = 66
 SLOTS_PER_PAGE = 5
+BUTTON_DIM_ALPHA = 162
 font = pygame.font.Font(r"assets\font.ttf",FONT_HEIGHT)
 bigFont = pygame.font.Font(r"assets\font.ttf",BIG_FONT_HEIGHT)
 mediumFont = pygame.font.Font(r"assets\font.ttf", 44)
@@ -410,6 +411,37 @@ def rollFromChance(chances:dict):
 
     return None
 
+def enableButtonType(enable = True, buttonType = "buy"):
+    """Enables or disables(based on the `enable` param) all the buttons with buttonType `buttonType`. 
+    When `buttonType` is set to 'all' enables or disables all the buttons."""
+
+    if buttonType not in ("all", "buy", "sell"):
+        return
+
+    def controlBasedOnFlag(SPButton):
+        if enable:
+            SPButton.enable()
+        else:
+            SPButton.disable()
+
+    if buttonType == "all":
+        for spb in sellPanelButtons:
+            controlBasedOnFlag(spb)
+
+    for spb in sellPanelButtons:
+        if spb.buttonType == buttonType:
+            controlBasedOnFlag(spb)
+
+def controlSPBDimming():
+
+    # disable(dim) the buttons
+    enableButtonType(False, "all")
+    if selectedSellableItem.buyable and inventory.coins > BUY_PANEL_PRICE_LIST[selectedSellableItem.name]:
+        enableButtonType(True, "buy") # enable if enough monry to buy at least one and they're buyable
+
+    if selectedSellableItem.sellable and selectedSellableItem.item in inventory.items:
+        enableButtonType(True, "sell") # enable sell buttons if you have it and sellable
+
 
 class entity:
     """Every object on a screen. List: entities"""
@@ -787,10 +819,12 @@ class sellPanelItem(sellPanelObject):
         """select this item as the selectedSellable."""
         global selectedSellableItem
 
+        # flags and UI
         self.selected = True
         selectedSellableItem = self
         highlightFrame.x,highlightFrame.y = self.x-5,self.y-5
 
+        # description change
         for descLine in descriptionLines:
             descLine.image = renderText("","black")
         for i,line in enumerate(self.item.description.splitlines()):
@@ -834,6 +868,8 @@ class sellPanelItem(sellPanelObject):
         buyMaxLine.image = renderText(buyMaxText, "black")
         sellAllLine.image = renderText(sellAllText, "black")
 
+        controlSPBDimming()
+
     def draw(self, surf=sellPanel):
         super().draw()
         if self.sellable:
@@ -847,11 +883,41 @@ class sellPanelItem(sellPanelObject):
 
 class sellPanelButton(sellPanelObject):
     """Class for buttons like sellAll,sell1 etc. List: sellPanelButtons."""
-    def __init__(self, x, y, layer=0, width=0, height=0, image=None):
+    def __init__(self, x, y, buttonType = "buy", layer=0, width=0, height=0, image=None):
         super().__init__(x, y, layer, width, height, image)
+        self.disabled = False
+        self.buttonType = buttonType
+        self.enabledImage = self.image
+
+        # create dimmed disabled image
+        self.disabledImage = pygame.Surface((self.width, self.height), flags=pygame.SRCALPHA)
+        overlay = pygame.Surface((self.width,self.height), flags=pygame.SRCALPHA)
+        overlay.fill((0,0,0,BUTTON_DIM_ALPHA))
+        overlay.blit(self.enabledImage, (0,0), special_flags=pygame.BLEND_RGBA_MULT)
+        self.disabledImage.blit(self.enabledImage, (0,0))
+        self.disabledImage.blit(overlay,(0,0))
+
+
         sellPanelButtons.append(self)
+
     def action(self):
         pass
+
+    def disable(self):
+        if self.disabled:
+            return
+
+        self.disabled = True
+        self.image = self.disabledImage
+
+    def enable(self):
+        if not self.disabled:
+            return
+
+        self.disabled = False
+        self.image = self.enabledImage
+
+
 
 class machine(entity):
     """Class for machines like millstone. List: machines"""
@@ -1628,12 +1694,12 @@ loadClassesDict = {
 }
 
 # buttons
-sell1Button = sellPanelButton(60,560-192,image=sell1ButtonImage)
-sellCustomButton = sellPanelButton(224,560-192,image=sellCustomButtonImage)
-sellAllButton = sellPanelButton(388,560-192,image=sellAllButtonImage)
-buy1Button = sellPanelButton(60,560-96, image=buy1Image)
-buyCustomButton = sellPanelButton(224,560-96, image=buyCustomImage)
-buyMaxButton = sellPanelButton(388, 560-96, image=buyMaxImage)
+sell1Button = sellPanelButton(60,560-192, "sell", image=sell1ButtonImage)
+sellCustomButton = sellPanelButton(224,560-192, "sell", image=sellCustomButtonImage)
+sellAllButton = sellPanelButton(388,560-192, "sell", image=sellAllButtonImage)
+buy1Button = sellPanelButton(60,560-96, "buy",image=buy1Image)
+buyCustomButton = sellPanelButton(224,560-96, "buy",image=buyCustomImage)
+buyMaxButton = sellPanelButton(388, 560-96, "buy",image=buyMaxImage)
 backButton = sellPanelButton(0,0,image=backButtonImage)
 sell1Button.action = sell1
 sellAllButton.action = sellAll
@@ -1885,10 +1951,9 @@ def mouseControl():
                     i.select()
 
             if canPressAgain:
-                for b in sellPanelButtons:
-                    b:sellPanelButton
-                    if b.getRect().collidepoint(mousex,mousey):
-                        b.action()
+                for SPButton in sellPanelButtons:
+                    if SPButton.getRect().collidepoint(mousex,mousey) and not SPButton.disabled:
+                        SPButton.action()
                         canPressAgain = False
                         break
 

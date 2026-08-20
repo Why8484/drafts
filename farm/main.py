@@ -560,10 +560,10 @@ class wheat(entity):
         self.timePlanted = 0
         x,y = field.x,field.y-40
         self.phase = 0
-        self.growthTime = [random.randint(8,12),
-                           random.randint(11,19),
-                           random.randint(7,19),
-                           random.randint(19,25)]
+        self.growthTime = [random.randint(16,24),
+                           random.randint(22,38),
+                           random.randint(14,38),
+                           random.randint(38,50)]
         super().__init__(x,y, 1, BLOCK_SIZE, BLOCK_SIZE, self.growthSequence[self.phase])
         plants.append(self)
     def increaseTimePlanted(self):
@@ -587,20 +587,20 @@ class wheat(entity):
         self.destroy()
         match self.phase:
             case 0:
-                inventory.add(wheatSeeds,rollFromChance({0: 60, 1: 40}))
+                inventory.add(wheatSeeds,rollFromChance({0: 80, 1: 20}))
             case 1:
-                inventory.add(wheatSeeds,rollFromChance({0: 10, 1: 65, 2: 25}))
+                inventory.add(wheatSeeds,rollFromChance({0: 20, 1: 60, 2: 20}))
             case 2:
-                inventory.add(wheatSeeds, rollFromChance({1: 50, 2: 35, 3: 15}))
+                inventory.add(wheatSeeds, rollFromChance({1: 50, 2: 40, 3: 10}))
             case 3:
                 inventory.add(wheatSeeds, rollFromChance({2: 100}))
             case 4:
-                inventory.add(wheatSeeds, rollFromChance({2: 60, 3: 35, 4:5}))
-                inventory.add(wheatBundle, 1)
+                inventory.add(wheatSeeds, rollFromChance({2: 70, 3: 30}))
+                inventory.add(wheatBundle, rollFromChance({1: 95, 2: 5}))
 
 class inventory:
     items = {}
-    coins = 1
+    coins = 1000
     page = 1
     previousPage = 1
     LAST_PAGE = 6
@@ -876,7 +876,7 @@ class millstoneMachine(machine):
         super().__init__(x, y, millstoneImage)
         self.holdStart = None
         self.holdTime = 0
-        self.timeToComplete = 10
+        self.timeToComplete = 20
         self.animIndex = 0
         self.heightIndex = 0
         barX,barY = self.x-5,self.y-15
@@ -1588,6 +1588,10 @@ def sellCustom():
 
         inventory.coins += SELL_PANEL_PRICE_LIST[selectedSellableItem.name]*amt
         inventory.items[selectedSellableItem.item] -= amt
+        if inventory.items[selectedSellableItem.item] == 0:
+            inventory.popFromItems(selectedSellableItem.item)
+            selectedSellableItem.select()
+
         actionOnInputEnd = None
 
     actionOnInputEnd = sellCustomAmt
@@ -1701,6 +1705,19 @@ NUMBERS = {
     pygame.K_9: 9,
 }
 
+KP_NUMBERS = {
+    pygame.K_KP0: 0,
+    pygame.K_KP1: 1,
+    pygame.K_KP2: 2,
+    pygame.K_KP3: 3,
+    pygame.K_KP4: 4,
+    pygame.K_KP5: 5,
+    pygame.K_KP6: 6,
+    pygame.K_KP7: 7,
+    pygame.K_KP8: 8,
+    pygame.K_KP9: 9,
+}
+
 def flickUpdateFrame():
     """Flick 'updateFrame' back on."""
     global updateFrame
@@ -1750,7 +1767,6 @@ def mouseScroll(directionFactor:int) -> None:
     global selectedInvSlot,sellPanelOpened,selectedSellableItem
 
     currentSlotIndex = slots.index(selectedInvSlot)
-    print(currentSlotIndex)
     currentPageSlotIndexRange = [(inventory.page-1)*SLOTS_PER_PAGE, inventory.page*SLOTS_PER_PAGE-1]
 
     if currentPageSlotIndexRange[0] <= currentSlotIndex + directionFactor <= currentPageSlotIndexRange[1]:
@@ -1760,12 +1776,31 @@ def mouseScroll(directionFactor:int) -> None:
     else:
         selectedInvSlot = slots[currentPageSlotIndexRange[1]]
 
+    syncSellableSelectWithInvSelect()
+
+def syncSellableSelectWithInvSelect():
+    """Sets the selected sellable to the item selected in inv."""
+    global selectedSellableItem
+
     if sellPanelOpened:
         for spi in sellPanelItems:
             if spi.item == selectedInvSlot.item:
                 selectedSellableItem = spi
                 selectedSellableItem.select()
                 break
+
+def setSlotIndexOnPage(index):
+    """Sets selected slot to the one behind the page index given. 
+    Example: index = 4, inv.page = 5, will set selected inv slot to
+    slots[(5-1)*SLOTS_PER_PAGE(5)+4] = slots[24]."""
+    global selectedInvSlot
+
+    if not 1 <= index <= 5:
+        return
+
+    selectedInvSlot = slots[((inventory.page-1)*SLOTS_PER_PAGE)+index-1]
+    syncSellableSelectWithInvSelect()
+
 
 
 def mouseControl():
@@ -1905,6 +1940,10 @@ def control():
         for key,num in NUMBERS.items():
             if keys[key]:
                 inventory.changePage(num)
+
+    for kpKey, kpNum in KP_NUMBERS.items():
+        if keys[kpKey]:
+            setSlotIndexOnPage(kpNum)
 
     # input
     if actionOnInputEnd is not None and canTypeAgain:

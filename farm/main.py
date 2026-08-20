@@ -1116,8 +1116,8 @@ class brickOvenMachine(machine):
             # It also represents how much fuel does a smeltable 
             # use or how much power the fuel can give.
             dough: -5,
-            wood: (-4,5),
-            charcoal: 10,
+            wood: (-5,5),
+            charcoal: 20,
         }
 
         self.produce = {
@@ -1185,6 +1185,7 @@ class brickOvenMachine(machine):
             inventory.add(self.producedItem,1)
             self.producedItem = None
             self.prBar.hide()
+        
 
     def onTick(self):
         if self.currentSequence == brickOvenCookingSequence and self.ticks % 10 == 0:
@@ -1632,13 +1633,13 @@ buyCustomLine = sellPanelObject(912,300)
 highlightFrame = sellPanelObject(-950,-950,layer=-1,image=highlightFrameImage)
 SELL_PANEL_PRICE_LIST = {
     "millstone": 75,
-    "flour": 20,
+    "flour": 15,
     "wheat seeds": 1,
-    "bowl": 50,
+    "bowl": 175,
     "wheat bundle": 5,
-    "dough": 30,
+    "dough": 35,
     "brick oven": 450,
-    "bread": 45,
+    "bread": 50,
 }
 BUY_PANEL_PRICE_LIST = {
     "wheat seeds": 1,
@@ -1646,9 +1647,9 @@ BUY_PANEL_PRICE_LIST = {
     "wood ash": 20,
     "bucket of water": 10,
     "millstone": 100,
-    "bowl": 75,
+    "bowl": 215,
     "brick oven": 500,
-    "wood": 5
+    "wood": 15
 }
 
 KEY_BINDS = {

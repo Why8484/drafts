@@ -6,6 +6,7 @@ import json
 from copy import copy
 import ast
 import pygame
+import sys
 
 pygame.init()
 HEIGHT = 720
@@ -36,6 +37,7 @@ typingPosition = 780,100
 actionOnInputEnd = None
 canTypeAgain = True
 selectedInvSlot = None
+GAME_RESET_HAPPENED = False
 DESCRIPTION_LINE_SYMBOLS = 50
 dt = 0
 justExited = False
@@ -277,8 +279,36 @@ def loadGame():
 
     for objectDict in objectDicts:
         loadClassesDict[objectDict["class"]].loadObject(objectDict)
+
+    loadGameInfo()
+
+
+def loadGameInfo():
+    """Loads general info about the game."""
+
+    with open("gameInfo.txt", "r") as gi:
+        savedGameInfo = gi.read()
+
+    gameInfoSaves = savedGameInfo.split(";")
+    firstLaunch = json.loads(gameInfoSaves[0].replace("first launch: ", ""))
+    if firstLaunch:
+        field(1,1)
+        firstLaunch = False
+        with open("gameInfo.txt", "w") as gi:
+            gi.write("first launch: " + json.dumps(firstLaunch) + ";")
     
-        
+
+def resetSavedGameContext():
+    """Resets all the saved info about the game."""
+
+    with open("gameInfo.txt", "w") as gi:
+        gi.write("first launch: true;")
+
+    with open("saveFile.txt", "w") as sf:
+        sf.write("")        
+
+    print("ALL OF THE GAME PROGRESS HAS BEEN RESET.")
+    sys.exit()
 
 
 def createDefaultImage(w,h,col1,col2):
@@ -1593,8 +1623,6 @@ loadClassesDict = {
     "millstoneMachine": millstoneMachine,
 }
 
-field(1,1)
-
 # buttons
 sell1Button = sellPanelButton(60,560-192,image=sell1ButtonImage)
 sellCustomButton = sellPanelButton(224,560-192,image=sellCustomButtonImage)
@@ -1652,10 +1680,12 @@ BUY_PANEL_PRICE_LIST = {
     "wood": 15
 }
 
+# tuple of keys here means key combination
 KEY_BINDS = {
     pygame.K_ESCAPE: lambda: globals().__setitem__("sellPanelOpened",False),
     pygame.K_RIGHT: lambda: inventory.changePage("right"),
-    pygame.K_LEFT: lambda: inventory.changePage("left")
+    pygame.K_LEFT: lambda: inventory.changePage("left"),
+    (pygame.K_r, pygame.K_LCTRL, pygame.K_LALT): resetSavedGameContext,
 }
 
 NUMBERS = {
@@ -1863,10 +1893,14 @@ def control():
     keys = pygame.key.get_pressed()
 
     for k,action in KEY_BINDS.items():
-        if keys[k] and canTypeAgain:
+        if not isinstance(k, tuple) and keys[k] and canTypeAgain:
             action()
             canTypeAgain = False
-
+        elif isinstance(k, tuple) and canTypeAgain:
+            if all([keys[actualKey] for actualKey in k]):
+                action()
+                canTypeAgain = False
+        
     if not sellPanelOpened:
         for key,num in NUMBERS.items():
             if keys[key]:

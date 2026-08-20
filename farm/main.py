@@ -14,6 +14,7 @@ WIDTH = 1280
 screen = pygame.display.set_mode((WIDTH,HEIGHT))
 invPanel = pygame.Surface((WIDTH, 160)) # 1280 X 160
 sellPanel = pygame.Surface((WIDTH,560)) # 1280 X 560
+transitionScreen = pygame.Surface((WIDTH,HEIGHT), flags=pygame.SRCALPHA) # 1280 X 720 overlay for transitions
 sellPanelOpened = False
 clock = pygame.time.Clock()
 pygame.display.set_caption("farm")
@@ -26,6 +27,7 @@ FONT_HEIGHT = 30
 BIG_FONT_HEIGHT = 66
 SLOTS_PER_PAGE = 5
 BUTTON_DIM_ALPHA = 162
+TIME_PER_FRAME = 1/MAX_FPS
 font = pygame.font.Font(r"assets\font.ttf",FONT_HEIGHT)
 bigFont = pygame.font.Font(r"assets\font.ttf",BIG_FONT_HEIGHT)
 mediumFont = pygame.font.Font(r"assets\font.ttf", 44)
@@ -81,6 +83,9 @@ def measureBlockDistance(x1,y1,x2,y2):
     y1 = y1//BLOCK_SIZE
     y2 = y2//BLOCK_SIZE
     
+    return (abs(x1-x2)**2+abs(y1-y2)**2)*(1/2)
+
+def measureDistance(x1,y1,x2,y2):
     return (abs(x1-x2)**2+abs(y1-y2)**2)*(1/2)
 
 def renderText(text:str,color):
@@ -244,8 +249,6 @@ def isIterable(obj):
         return True
     except TypeError:
         return False
-    
-
 
 def loadGame():
     """Loads the progress as you log in."""
@@ -261,7 +264,7 @@ def loadGame():
     if not invSave == "":            
         invSave = ast.literal_eval(invSave)
         for itemName, count, slotIndex in invSave:
-            inventory.add(existingItems[itemName], count, slotIndex)
+            inventory.add(existingItems[itemName], count, putSlot = slotIndex)
 
     # coins loading
     coinsSave = saves[1] if len(saves) > 1 else ""
@@ -426,7 +429,9 @@ def enableButtonType(enable = True, buttonType = "buy"):
 
     if buttonType == "all":
         for spb in sellPanelButtons:
-            controlBasedOnFlag(spb)
+            if spb.buttonType in ("buy", "sell"):
+                controlBasedOnFlag(spb)
+
 
     for spb in sellPanelButtons:
         if spb.buttonType == buttonType:
@@ -515,6 +520,9 @@ class entity:
     @classmethod
     def loadObject(cls, objectDict):
         pass
+
+    def drawOnOverlay(self,surf=transitionScreen):
+        surf.blit(self.image, (self.x,self.y))
 
 class obstacle(entity):
     """Object that is a collider and is in colliders list. List: colliders."""
@@ -619,16 +627,17 @@ class wheat(entity):
         self.destroy()
         match self.phase:
             case 0:
-                inventory.add(wheatSeeds,rollFromChance({0: 80, 1: 20}))
+                inventory.add(wheatSeeds,rollFromChance({0: 80, 1: 20}), (self.field.gridx,self.field.gridy))
             case 1:
-                inventory.add(wheatSeeds,rollFromChance({0: 20, 1: 60, 2: 20}))
+                inventory.add(wheatSeeds,rollFromChance({0: 20, 1: 60, 2: 20}), (self.field.gridx,self.field.gridy))
             case 2:
-                inventory.add(wheatSeeds, rollFromChance({1: 50, 2: 40, 3: 10}))
+                inventory.add(wheatSeeds, rollFromChance({1: 50, 2: 40, 3: 10}), (self.field.gridx,self.field.gridy))
             case 3:
-                inventory.add(wheatSeeds, rollFromChance({2: 100}))
+                inventory.add(wheatSeeds, rollFromChance({2: 100}), (self.field.gridx,self.field.gridy))
             case 4:
-                inventory.add(wheatSeeds, rollFromChance({2: 70, 3: 30}))
-                inventory.add(wheatBundle, rollFromChance({1: 95, 2: 5}))
+                inventory.add(wheatSeeds, rollFromChance({2: 70, 3: 30}), (self.field.gridx,self.field.gridy))
+                inventory.add(wheatBundle, rollFromChance({1: 95, 2: 5}), (self.field.gridx,self.field.gridy))
+
 
 class inventory:
     items = {}
@@ -638,13 +647,14 @@ class inventory:
     LAST_PAGE = 6
 
     @classmethod
-    def add(cls,itemAdding,count,putSlot="nextEmpty"):
+    def add(cls,itemAdding,count,gridCoords = None, putSlot="nextEmpty"):
         """
         Adds some amount of some item to the items dict.
         Params:
             itemAdding: item you wanna add.
             count: how many of these items you wanna add.
             slot: the index of wanted slot in slots list. Will be next em0pty if left empty.
+            gridCoords: from wheer you got the item(needed to perform the transition).
         Returns:
             none.
         """
@@ -662,6 +672,10 @@ class inventory:
             emptySlot.item = itemAdding
             itemAdding.slot = emptySlot
         flickUpdateFrame()
+
+        if gridCoords is not None:
+            for _ in range(count):
+                transition(gridCoords[0], gridCoords[1], (itemAdding.slot.x+BLOCK_SIZE*1.2)//BLOCK_SIZE, (sellPanel.get_height() + BLOCK_SIZE)//BLOCK_SIZE, itemAdding.image)
 
     @classmethod
     def draw(cls):
@@ -942,7 +956,7 @@ class millstoneMachine(machine):
         super().__init__(x, y, millstoneImage)
         self.holdStart = None
         self.holdTime = 0
-        self.timeToComplete = 20
+        self.timeToComplete = 1 # 20
         self.animIndex = 0
         self.heightIndex = 0
         barX,barY = self.x-5,self.y-15
@@ -1008,7 +1022,7 @@ class millstoneMachine(machine):
             self.holdTime += dt
             if self.holdTime >= self.timeToComplete:
                 self.prBar.hide()
-                inventory.add(self.inputOutput[self.itemIn], 1)
+                inventory.add(self.inputOutput[self.itemIn], 1, gridCoords = (self.x//BLOCK_SIZE, self.y//BLOCK_SIZE))
                 self.empty = True
                 self.holdStart = None
                 self.holdTime = 0
@@ -1137,11 +1151,11 @@ class bowlMachine(machine):
             if self.holdTime >= self.timeToComplete:
                 self.prBar.hide()
                 if tuple(self.itemsIn) in self.inputOutput:
-                    inventory.add(self.inputOutput[tuple(self.itemsIn)], 1)
+                    inventory.add(self.inputOutput[tuple(self.itemsIn)], 1, gridCoords = (self.x//BLOCK_SIZE,self.y//BLOCK_SIZE))
                     self.itemsIn.clear()
                 else:
                     for i in self.itemsIn:
-                        inventory.add(i,1)
+                        inventory.add(i,1, gridCoords = (self.x//BLOCK_SIZE,self.y//BLOCK_SIZE))
                     self.itemsIn.clear()
                 self.empty = True
                 self.holdStart = None
@@ -1278,7 +1292,7 @@ class brickOvenMachine(machine):
 
     def onLeftClick(self):
         if self.producedItem is not None:
-            inventory.add(self.producedItem,1)
+            inventory.add(self.producedItem,1, gridCoords = (self.x//BLOCK_SIZE,self.y//BLOCK_SIZE))
             self.producedItem = None
             self.prBar.hide()
         
@@ -1414,6 +1428,68 @@ class shadow(entity):
         super().__init__(x, y, -3, 100, 40, shadowImage)
         shadows.append(self)
 
+class transition:
+    """Class for transitions. List: transitions"""
+    def __init__(self, startGridx, startGridy, endGridx, endGridy, image):
+        self.startGridx = startGridx
+        self.startGridy = startGridy
+        self.endGridx = endGridx
+        self.endGridy = endGridy
+
+        # transition properties
+        self.transitionTime = 1
+        self.currentFrame = 0
+        self.transitionFrames = self.transitionTime/TIME_PER_FRAME
+        self.maxScale = 2
+        self.startScale = 0.4
+        self.scale = self.startScale
+
+        # random start end end locations
+        self.startX = random.randint(startGridx*BLOCK_SIZE-BLOCK_SIZE//2, (startGridx+1)*BLOCK_SIZE-1+BLOCK_SIZE//2)
+        self.startY = random.randint(startGridy*BLOCK_SIZE-BLOCK_SIZE//2, (startGridy+1)*BLOCK_SIZE-1+BLOCK_SIZE//2)
+        self.endX = endGridx*BLOCK_SIZE-BLOCK_SIZE//2
+        self.endY = endGridy*BLOCK_SIZE-BLOCK_SIZE//2
+        self.startPos = pygame.Vector2(self.startX,self.startY)
+        self.endPos = pygame.Vector2(self.endX,self.endY)
+
+        # step per frame
+        self.stepX = (self.endX - self.startX)/self.transitionFrames
+        self.stepY = (self.endY - self.startY)/self.transitionFrames
+
+        # scale step per frame
+        self.scaleStep = (self.maxScale - self.startScale)/self.transitionFrames*3
+
+        self.originalImage = image
+        self.entity = entity(self.startX, self.startY, image=image)
+
+
+        self.entity.draw = self.entity.drawOnOverlay
+        transitions.append(self)
+
+    def applyTransition(self):
+        self.currentFrame += 1
+        normalizedTime = min(1, self.currentFrame / self.transitionFrames)
+
+        self.currentPos = self.startPos.lerp(self.endPos, normalizedTime)
+
+        if normalizedTime < 0.2:
+            scale = self.startScale + (self.maxScale - self.startScale) * (normalizedTime / 0.2)
+        elif normalizedTime > 0.8:
+            scale = self.startScale + (self.maxScale - self.startScale) * ((1 - normalizedTime) / 0.2)
+        else:
+            scale = self.maxScale
+
+        scaledImg = pygame.transform.scale_by(self.originalImage, scale)
+        rect = scaledImg.get_rect(center=self.currentPos)
+
+        self.entity.image = scaledImg
+        self.entity.x, self.entity.y = rect.topleft
+
+        if normalizedTime >= 1:
+            entities.remove(self.entity)
+            transitions.remove(self)           
+
+
 # lists
 entities:list[entity] = []
 colliders:list[obstacle] = []
@@ -1428,6 +1504,7 @@ machines:list[machine] = []
 invControlButtons:list[entity] = []
 shadows: list[shadow] = []
 existingItems:dict[str, item] = {}
+transitions:list[transition] = []
 
 # create slots
 for page in range(6):
@@ -1605,7 +1682,7 @@ def buy1():
         return
 
     inventory.coins -= BUY_PANEL_PRICE_LIST[selectedSellableItem.name]
-    inventory.add(selectedSellableItem.item,1)
+    inventory.add(selectedSellableItem.item,1, gridCoords = (selectedSellableItem.x//BLOCK_SIZE, selectedSellableItem.y//BLOCK_SIZE))
     selectedSellableItem.select()
 
 
@@ -1632,7 +1709,7 @@ def buyMax():
         return
 
     inventory.coins -= BUY_PANEL_PRICE_LIST[selectedSellableItem.name]*maxAmount
-    inventory.add(selectedSellableItem.item,maxAmount)
+    inventory.add(selectedSellableItem.item,maxAmount, gridCoords = (selectedSellableItem.x//BLOCK_SIZE, selectedSellableItem.y//BLOCK_SIZE))
     selectedSellableItem.select()
 
 
@@ -1679,7 +1756,7 @@ def buyCustom():
 
         amt = int(amt)
         inventory.coins -= BUY_PANEL_PRICE_LIST[selectedSellableItem.name]*amt
-        inventory.add(selectedSellableItem.item, amt)
+        inventory.add(selectedSellableItem.item, amt, gridCoords = (selectedSellableItem.x//BLOCK_SIZE, selectedSellableItem.y//BLOCK_SIZE))
         actionOnInputEnd = None
 
     actionOnInputEnd = buyCustomAmt
@@ -1700,7 +1777,7 @@ sellAllButton = sellPanelButton(388,560-192, "sell", image=sellAllButtonImage)
 buy1Button = sellPanelButton(60,560-96, "buy",image=buy1Image)
 buyCustomButton = sellPanelButton(224,560-96, "buy",image=buyCustomImage)
 buyMaxButton = sellPanelButton(388, 560-96, "buy",image=buyMaxImage)
-backButton = sellPanelButton(0,0,image=backButtonImage)
+backButton = sellPanelButton(0,0, "special", image=backButtonImage)
 sell1Button.action = sell1
 sellAllButton.action = sellAll
 sellCustomButton.action = sellCustom
@@ -1875,6 +1952,7 @@ def mouseControl():
 
     mouse = pygame.mouse.get_pressed()
     mousex,mousey = pygame.mouse.get_pos()
+    print((mousex,mousey))
 
     if mouse[2] and 0 < mousex < WIDTH and 0 < mousey < HEIGHT:
         if not sellPanelOpened:
@@ -1956,8 +2034,6 @@ def mouseControl():
                         SPButton.action()
                         canPressAgain = False
                         break
-
-
 
     elif not any(mouse):
         canPressAgain = True
@@ -2062,6 +2138,7 @@ def render():
 
     # if not updateFrame:
     #     return
+    transitionScreen.fill((0,0,0,0))
 
     screen.fill("white")
     entities.sort(key=lambda x: x.layer)
@@ -2085,12 +2162,20 @@ def render():
 
         screen.blit(sellPanel,(0,0))
 
+    screen.blit(transitionScreen, (0,0))
+
+def applyTransitions():
+    for t in transitions:
+        t.applyTransition()
+
 def update():
     for pl in plants:
         pl.increaseTimePlanted()
 
     for m in machines:
         m.onTick()
+
+    applyTransitions()
 
 selectedInvSlot = slots[0]
 screen.fill("white")

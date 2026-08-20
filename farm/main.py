@@ -88,12 +88,15 @@ def renderText(text:str,color):
 
 
 def renderBigText(text:str,color,size=BIG_FONT_HEIGHT):
-    """Returns a surface of rendered text in big font."""
+    """Returns a surface of rendered text in font of custom size."""
 
     if size == BIG_FONT_HEIGHT:
         surf = bigFont.render(text,False,color)
     elif size == 44:
         surf = mediumFont.render(text,False,color)
+    else:
+        # custom sized font
+        surf = pygame.font.Font(r"assets\font.ttf", size).render(text,False,color)
 
     return surf
 
@@ -613,6 +616,8 @@ class inventory:
         rightButtonEnt.draw(invPanel)
         invPanel.blit(renderBigText(str(displayCoinsAmount()),"black",44),
                       (1165,invPanel.get_height()-60))
+        invPanel.blit(renderBigText("currently on page: " + str(inventory.page), "black",33),
+                      (1060, 10))
 
 
     @classmethod
@@ -1376,8 +1381,6 @@ flour = item(
     "flour",
     description="""Hard labor with a millstone finally paid off with this
 magical white dust.
-After you know the work put into it, it looks even better
-than... Let's say... another white dust.
 A fundamental ingredient used to make dough and bread.""",
 )
 
@@ -1409,7 +1412,8 @@ brickOven = item(
     brickOvenImage,
     "brick oven",
     description="""An oven assembled using bricks. Built
-for baking bread. A very powerful machine, just sometimes needs a lot of fuel.""",
+for baking bread. A very powerful machine, just sometimes needs a lot of fuel. 
+When placed near farmland, it defertilizes the soil, doubling wheat growth time.""",
     machineClass=brickOvenMachine,
 )
 

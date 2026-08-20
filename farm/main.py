@@ -99,14 +99,18 @@ def renderBigText(text:str,color,size=BIG_FONT_HEIGHT):
     """Returns a surface of rendered text in font of custom size."""
 
     if size == BIG_FONT_HEIGHT:
-        surf = bigFont.render(text,False,color)
+        surf = bigFont.render(text,False,color).convert_alpha()
     elif size == 44:
-        surf = mediumFont.render(text,False,color)
+        surf = mediumFont.render(text,False,color).convert_alpha()
     else:
         # custom sized font
-        surf = pygame.font.Font(r"assets\font.ttf", size).render(text,False,color)
+        surf = pygame.font.Font(r"assets\font.ttf", size).render(text,False,color).convert_alpha()
 
-    return surf
+    bgSurf = pygame.Surface(surf.get_size(), flags=pygame.SRCALPHA)
+
+    bgSurf.blit(surf, (0,0))
+    
+    return bgSurf
 
 def displayLetterAmount(amt):
     """Displays the number as 9.0K, 56M etc."""
@@ -127,6 +131,11 @@ def displayLetterAmount(amt):
             if nDigits == 0:
                 returnValue = str(round(amt/n))
             return returnValue + letter
+
+def addPopUpMessage(text):
+    """Adds the wanted text to the screen."""
+
+    popUp(text, 80, (222, 77, 64, 255), (WIDTH//2, 440))
 
 def nearestSpace(string: str, index: int) -> int:
     """Finds the index of the nearest space to index given in string `string`.
@@ -437,15 +446,37 @@ def enableButtonType(enable = True, buttonType = "buy"):
         if spb.buttonType == buttonType:
             controlBasedOnFlag(spb)
 
-def controlSPBDimming():
+def writeSPBMessages(buttonType, msg):
+    """Assigns `disabledText` to each button of `buttonType`.
+    When `buttonType` is set to 'all' enables or disables all the buttons."""
 
-    # disable(dim) the buttons
+    if buttonType not in ("all", "buy", "sell"):
+        return
+
+    if buttonType == "all":
+        for spb in sellPanelButtons:
+            spb.disabledText = msg
+    else:
+        for spb in sellPanelButtons:
+            if spb.buttonType == buttonType:
+                spb.disabledText = msg
+
+def controlSPBDimming():
     enableButtonType(False, "all")
-    if selectedSellableItem.buyable and inventory.coins > BUY_PANEL_PRICE_LIST[selectedSellableItem.name]:
-        enableButtonType(True, "buy") # enable if enough monry to buy at least one and they're buyable
+    if selectedSellableItem.buyable and inventory.coins >= BUY_PANEL_PRICE_LIST[selectedSellableItem.name]:
+        enableButtonType(True, "buy") # enable if enough money to buy at least one and they're buyable
+    elif not selectedSellableItem.buyable:
+        writeSPBMessages("buy", "You know, money can't buy everything.")
+    elif inventory.coins < BUY_PANEL_PRICE_LIST[selectedSellableItem.name]:
+        writeSPBMessages("buy", "Womp womp.")
 
     if selectedSellableItem.sellable and selectedSellableItem.item in inventory.items:
         enableButtonType(True, "sell") # enable sell buttons if you have it and sellable
+    elif not selectedSellableItem.sellable:
+        writeSPBMessages("sell", "Nah, I don't want that.")
+    elif selectedSellableItem.item not in inventory.items:
+        writeSPBMessages("sell", "Hey, i won't invest in something, that doesn't exist.")
+
 
 
 class entity:
@@ -903,6 +934,8 @@ class sellPanelButton(sellPanelObject):
         self.buttonType = buttonType
         self.enabledImage = self.image
 
+        self.disabledText = ""
+
         # create dimmed disabled image
         self.disabledImage = pygame.Surface((self.width, self.height), flags=pygame.SRCALPHA)
         overlay = pygame.Surface((self.width,self.height), flags=pygame.SRCALPHA)
@@ -911,9 +944,7 @@ class sellPanelButton(sellPanelObject):
         self.disabledImage.blit(self.enabledImage, (0,0))
         self.disabledImage.blit(overlay,(0,0))
 
-
         sellPanelButtons.append(self)
-
     def action(self):
         pass
 
@@ -1487,8 +1518,62 @@ class transition:
 
         if normalizedTime >= 1:
             entities.remove(self.entity)
-            transitions.remove(self)           
+            transitions.remove(self)      
+        
+class popUp:
+    def __init__(self, text, textSize, textColor, pos, duration=4.0, stayTime=0.5, floatSpeed=30.0):
+        """Class for pop ups on the screen."""
 
+        self.image = renderBigText(text, textColor, textSize).convert_alpha()
+        self.x, self.y = pos
+
+        # centralize the pos
+        self.x -= self.image.get_width()//2
+
+        self.duration = duration
+        self.stayTime = stayTime
+        self.floatSpeed = floatSpeed
+        self.layer = 5
+        
+        self.elapsedTime = 0
+        self.alpha = 255
+        self.fadeSpeed = 255 / duration if duration > 0 else 255
+        self.isFinished = False
+        
+        # Register to global tracking lists
+        popUps.append(self)
+        entities.append(self)
+
+    def update(self, dt):
+        """Updates timing, upward floating, fading, and self-cleanup."""
+        if self.isFinished:
+            return
+
+        self.elapsedTime += dt
+
+        # Wait until stayTime has passed before moving and fading
+        if self.elapsedTime >= self.stayTime:
+            self.y -= self.floatSpeed * dt
+            self.alpha -= self.fadeSpeed * dt
+
+            if self.alpha <= 0:
+                self.alpha = 0
+                self.isFinished = True
+                self.destroy()
+                return
+
+            self.image.set_alpha(int(self.alpha))
+
+    def draw(self, surface=transitionScreen):
+        if not self.isFinished:
+            surface.blit(self.image, (self.x, self.y))
+
+    def destroy(self):
+        """Removes the popup from global lists safely."""
+        if self in popUps:
+            popUps.remove(self)
+        if self in entities:
+            entities.remove(self)
 
 # lists
 entities:list[entity] = []
@@ -1505,6 +1590,7 @@ invControlButtons:list[entity] = []
 shadows: list[shadow] = []
 existingItems:dict[str, item] = {}
 transitions:list[transition] = []
+popUps:list[popUp] = []
 
 # create slots
 for page in range(6):
@@ -1833,6 +1919,7 @@ KEY_BINDS = {
     pygame.K_RIGHT: lambda: inventory.changePage("right"),
     pygame.K_LEFT: lambda: inventory.changePage("left"),
     (pygame.K_r, pygame.K_LCTRL, pygame.K_LALT): resetSavedGameContext,
+    (pygame.K_m, pygame.K_i, pygame.K_l, pygame.K_o, pygame.K_n): lambda: setattr(inventory, "coins", inventory.coins + 1000)
 }
 
 NUMBERS = {
@@ -1907,7 +1994,9 @@ def saveGame():
 
 def mouseScroll(directionFactor:int) -> None:
     """Covers mouse wheel controls."""
-    global selectedInvSlot,sellPanelOpened,selectedSellableItem
+    global selectedInvSlot,sellPanelOpened,selectedSellableItem,actionOnInputEnd
+
+    actionOnInputEnd = None
 
     currentSlotIndex = slots.index(selectedInvSlot)
     currentPageSlotIndexRange = [(inventory.page-1)*SLOTS_PER_PAGE, inventory.page*SLOTS_PER_PAGE-1]
@@ -1952,7 +2041,6 @@ def mouseControl():
 
     mouse = pygame.mouse.get_pressed()
     mousex,mousey = pygame.mouse.get_pos()
-    print((mousex,mousey))
 
     if mouse[2] and 0 < mousex < WIDTH and 0 < mousey < HEIGHT:
         if not sellPanelOpened:
@@ -2031,9 +2119,29 @@ def mouseControl():
             if canPressAgain:
                 for SPButton in sellPanelButtons:
                     if SPButton.getRect().collidepoint(mousex,mousey) and not SPButton.disabled:
+                        savedSlot = selectedSellableItem.item.slot
+                        if selectedSellableItem.item in inventory.items:
+                            savedCount = inventory.items[selectedSellableItem.item]
                         SPButton.action()
                         canPressAgain = False
+                        if SPButton.buttonType == "sell":
+                            try:
+                                inventory.items[selectedSellableItem.item]
+                            except:
+                                currentCount = 0
+                            else:
+                                currentCount = inventory.items[selectedSellableItem.item]
+                            for _ in range(savedCount-currentCount):
+                                transition(
+                                    int((savedSlot.x+BLOCK_SIZE*1.2)//BLOCK_SIZE), 
+                                    int((sellPanel.get_height() + BLOCK_SIZE)//BLOCK_SIZE),
+                                    (selectedSellableItem.x+BLOCK_SIZE*1.5)//BLOCK_SIZE,
+                                    (selectedSellableItem.y+BLOCK_SIZE*1.5)//BLOCK_SIZE,
+                                    selectedSellableItem.image
+                                )
                         break
+                    elif SPButton.getRect().collidepoint(mousex,mousey) and SPButton.disabled:
+                        addPopUpMessage(SPButton.disabledText)
 
     elif not any(mouse):
         canPressAgain = True
@@ -2064,7 +2172,7 @@ backButton.action = hideSellPanel
 
 def control():
     """Covers the control of the game."""
-    global inputValue,canTypeAgain
+    global inputValue,canTypeAgain, actionOnInputEnd
 
     keys = pygame.key.get_pressed()
 
@@ -2084,6 +2192,7 @@ def control():
 
     for kpKey, kpNum in KP_NUMBERS.items():
         if keys[kpKey]:
+            actionOnInputEnd = None
             setSlotIndexOnPage(kpNum)
 
     # input
@@ -2174,6 +2283,9 @@ def update():
 
     for m in machines:
         m.onTick()
+
+    for p in popUps:
+        p.update(dt)
 
     applyTransitions()
 

@@ -7,7 +7,7 @@ screen = pygame.display.set_mode((1280, 720))
 clock = pygame.time.Clock()
 running = True
 
-image = pygame.transform.scale_by(pygame.image.load("assets\\buyMax.png").convert_alpha(), 4)
+image = pygame.transform.scale_by(pygame.image.load("assets\\bread.png").convert_alpha(), 4)
 
 alpha = 100
 def reset(rectAlpha = 100):
@@ -16,10 +16,8 @@ def reset(rectAlpha = 100):
     overlay = pygame.Surface(image.get_size(), flags=pygame.SRCALPHA)
     overlay.fill((0, 0, 0, rectAlpha))  # Black with 120/255 opacity (adjust this darkness)
 
-    # 2. Mask the overlay using the image's alpha channel
     overlay.blit(image, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
 
-    # 3. Blit the original image, then blit the dark mask right over it
     surf = pygame.Surface((560, 560), flags=pygame.SRCALPHA)
     surf.blit(image, (0, 0))
     surf.blit(overlay, (0, 0))
@@ -34,10 +32,10 @@ while running:
             running = False
 
     keys = pygame.key.get_pressed()
-    if keys[pygame.K_DOWN]:
+    if keys[pygame.K_DOWN] and alpha > 0:
         alpha -= 1
         reset(alpha)
-    if keys[pygame.K_UP]:
+    if keys[pygame.K_UP] and alpha < 255:
         alpha += 1
         reset(alpha)
     if keys[pygame.K_p]:

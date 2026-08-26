@@ -38,7 +38,12 @@ canPressAgain = True
 inputValue = ""
 typingPosition = 780,100
 actionOnInputEnd = None
+lastMusicTime = 0
+lastMusicEndTime = time()
+intervalBetweenMusic = [60,300]
+currentMusicInterval = random.randint(intervalBetweenMusic[0], intervalBetweenMusic[1])
 canTypeAgain = True
+soundPlaying = None
 selectedInvSlot = None
 GAME_RESET_HAPPENED = False
 DESCRIPTION_LINE_SYMBOLS = 50
@@ -240,7 +245,6 @@ bowlStickSequence = loadFromFolder("bowlStick")
 sellPanelBG = pygame.transform.scale_by(loadImage("sellPanelBG.png"),2)
 tileVariants = loadFromFolder("tileVariants")
 shadowImage = loadImage("shadow.png")
-
 
 def loadItemAtrribute(objDict, attrName):
     """Loads object's atrribute if it should be equal to item class object. 
@@ -477,7 +481,33 @@ def controlSPBDimming():
     elif selectedSellableItem.item not in inventory.items:
         writeSPBMessages("sell", "Hey, i won't invest in something, that doesn't exist.")
 
+def getSoundPath(filename):
+    """Joins the filename with assets\\audio."""
+    return os.path.join("assets\\audio", filename)
 
+musicThemes = []
+
+class sound:
+    """Class for sounds."""
+    def __init__(self, name, audioPath, type="sound"):
+        self.name = name
+        self.audioPath = audioPath
+        self.sound = pygame.mixer.Sound(audioPath)
+        self.length = self.sound.get_length()
+        if type == "music":
+            musicThemes.append(self)
+
+    def play(self):
+        global soundPlaying, lastMusicTime
+
+        self.sound.play()
+        soundPlaying = self
+        lastMusicTime = time()
+
+sound("Listen to the rain", getSoundPath("listen to the rain.mp3"), type="music")
+sound("Gate of heaven", getSoundPath("gate of heaven.mp3"), type="music")
+sound("Path to the sun", getSoundPath("path to the sun.mp3"), type="music")
+sound("Jumping on rocks", getSoundPath("jumping on rocks.mp3"), type="music")
 
 class entity:
     """Every object on a screen. List: entities"""
@@ -705,7 +735,7 @@ class inventory:
         flickUpdateFrame()
 
         if gridCoords is not None:
-            for _ in range(count):
+            for _ in range((min((20, count)))):
                 transition(gridCoords[0], gridCoords[1], (itemAdding.slot.x+BLOCK_SIZE*1.2)//BLOCK_SIZE, (sellPanel.get_height() + BLOCK_SIZE)//BLOCK_SIZE, itemAdding.image)
 
     @classmethod
@@ -1101,6 +1131,7 @@ class bowlMachine(machine):
         self.holdStart = None
         self.holdTime = 0
         self.timeToComplete = 10
+        self.timePerItem = 5
         barX,barY = self.x-5,self.y-15
         if self.x == 0:
             barX = 0
@@ -1133,18 +1164,22 @@ class bowlMachine(machine):
         if self.holdStart is None:
             self.holdTime = 0
             self.holdStart = time()
+            self.timeToComplete = self.timePerItem*len(self.itemsIn)
         if self.holdTime >= self.timeToComplete:
             self.holdTime = 0
 
     def onRightClick(self):
         global canPressAgain
 
-        if not selectedInvSlot.item is None and canPressAgain and len(self.itemsIn) < self.maxItems and self.holdTime == 0:
+        if not selectedInvSlot.item is None and canPressAgain and len(self.itemsIn) < self.maxItems:
             self.empty = False
             self.itemsIn.append(selectedInvSlot.item)
             inventory.remove(selectedInvSlot.item)
             self.prBar.show()
             canPressAgain = False
+            if self.holdStart is not None:
+                self.timeToComplete = self.timePerItem*len(self.itemsIn)
+                self.updatePrBar()
             self.resetSavedLocations()
 
     def resetSavedLocations(self):
@@ -1192,9 +1227,7 @@ class bowlMachine(machine):
                 self.holdStart = None
                 self.holdTime = 0
 
-        self.prBar.setAnimationFrame(int(
-            self.holdTime/self.timeToComplete*len(progressBarSequence)
-            ))
+        self.updatePrBar()
 
         self.ticks += 1
 
@@ -1229,6 +1262,11 @@ class bowlMachine(machine):
                 surf.blit(smallI, (locationX+self.x,locationY+self.y))
             surf.blit(bowlStickSequence[0],(self.x,self.y))
             surf.blit(bowlFront,(self.x,self.y))
+
+    def updatePrBar(self):
+            self.prBar.setAnimationFrame(int(
+        self.holdTime/self.timeToComplete*len(progressBarSequence)
+        ))
 
     @classmethod
     def loadObject(cls, objectDict):
@@ -2107,7 +2145,7 @@ def mouseControl():
                         break
             if not justExited:
                 breakPlant(hoverField)            
-            if farmer.getRect().collidepoint(mousex,mousey):
+            if farmer.getRect().collidepoint(mousex,mousey) and canPressAgain:
                 showSellPanel()
         else:
             # in sell panel
@@ -2131,7 +2169,7 @@ def mouseControl():
                                 currentCount = 0
                             else:
                                 currentCount = inventory.items[selectedSellableItem.item]
-                            for _ in range(savedCount-currentCount):
+                            for _ in range(min(20, (savedCount-currentCount))):
                                 transition(
                                     int((savedSlot.x+BLOCK_SIZE*1.2)//BLOCK_SIZE), 
                                     int((sellPanel.get_height() + BLOCK_SIZE)//BLOCK_SIZE),
@@ -2277,6 +2315,20 @@ def applyTransitions():
     for t in transitions:
         t.applyTransition()
 
+def handleMusic():
+    global musicThemes, lastMusicTime, intervalBetweenMusic, currentMusicInterval, soundPlaying, lastMusicEndTime
+
+    if soundPlaying is not None and time() - lastMusicTime > soundPlaying.length:
+        soundPlaying = None
+        lastMusicEndTime = time()
+
+    elif time() - lastMusicEndTime > currentMusicInterval and soundPlaying is None:
+        random.choice(musicThemes).play()
+        currentMusicInterval = random.randint(intervalBetweenMusic[0], intervalBetweenMusic[1])
+
+
+
+
 def update():
     for pl in plants:
         pl.increaseTimePlanted()
@@ -2288,6 +2340,7 @@ def update():
         p.update(dt)
 
     applyTransitions()
+    handleMusic()
 
 selectedInvSlot = slots[0]
 screen.fill("white")

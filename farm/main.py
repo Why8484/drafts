@@ -546,6 +546,7 @@ class musicTheme:
         self.sound = pygame.mixer.Sound(audioPath)
         self.sound.set_volume(0.4)
         self.length = self.sound.get_length()
+        self.wasPlayed = False
         musicThemes.append(self)
 
     def play(self):
@@ -564,16 +565,27 @@ class soundEffect:
         for audioFilename in os.listdir(audioFolderPath):
             self.sounds.append(pygame.mixer.Sound(os.path.join(audioFolderPath, audioFilename)))
         self.currentSoundLength = 0
+        self.chosenSound = self.sounds[0]
 
     def play(self):
         global forestSoundPlaying
 
-        chosenSound = random.choice(self.sounds)
-        chosenSound.play()
-        chosenSound.set_volume(0.3)
-        self.currentSoundLength = chosenSound.get_length()
+        self.chosenSound = random.choice(self.sounds)
+        self.chosenSound.play()
+        self.wasPlayed = True
+        self.currentSoundLength = self.chosenSound.get_length()
         if self.name == "forestSounds":
-            forestSoundPlaying = chosenSound
+            forestSoundPlaying = self.chosenSound
+
+    def stop(self):
+        self.chosenSound.stop()
+        for s in self.sounds:
+            s.stop()
+        self.wasPlayed = False
+
+    def setVolume(self, volume:float):
+        for s in self.sounds:
+            s.set_volume(volume)
 
 class entity:
     """Every object on a screen. List: entities"""
@@ -810,6 +822,7 @@ class wheat(entity):
                            random.randint(14,38),
                            random.randint(38,50)]
         self.fullGrowthTime = sum(self.growthTime)
+        seedPlantSound.play()
         self.field.updateInfo()
         super().__init__(x,y, 1, BLOCK_SIZE, BLOCK_SIZE, self.growthSequence[self.phase])
         plants.append(self)
@@ -834,6 +847,7 @@ class wheat(entity):
     def breakMyself(self):
         """This is executed when player breaks the plant."""
         self.field.plant = None
+        wheatHarvestSound.play()
         self.destroy()
         match self.phase:
             case 0:
@@ -992,7 +1006,7 @@ def divideText(text: str, lineSymbolCount: int = DESCRIPTION_LINE_SYMBOLS) -> st
 
 class item:
     """Class for items that show up in the inventory space. List: existingItems."""
-    def __init__(self, image, name,layer=0,description="",machineClass=None):
+    def __init__(self, image, name, layer=0,description="",machineClass=None):
         self.image = image
         self.machineClass = machineClass
         self.layer = layer
@@ -1175,7 +1189,7 @@ class millstoneMachine(machine):
         super().__init__(x, y, millstoneImage)
         self.holdStart = None
         self.holdTime = 0
-        self.timeToComplete = 1 # 20
+        self.timeToComplete = 100 # 20
         self.animIndex = 0
         self.heightIndex = 0
         barX,barY = self.x-5,self.y-15
@@ -1191,12 +1205,16 @@ class millstoneMachine(machine):
             charcoal: woodAsh
         }
         self.animate = False
+        self.endTimeSoundPLayed = time()
+        self.previousAnimate = False
+        self.soundJustPlayed = False
         self.ticks = 0
         self.completed = False
     def onLeftClick(self):
         if self.holdStart is None and not self.completed:
             self.holdTime = 0
             self.holdStart = time()
+            millstoneGrindSound.play()
         if self.holdTime >= self.timeToComplete:
             self.holdTime = 0
 
@@ -1237,20 +1255,30 @@ class millstoneMachine(machine):
 
 
 
-        if self.holdStart is not None and self.animate:
+        if self.holdStart is not None and self.animate and self.itemIn is not None:
             self.holdTime += dt
             if self.holdTime >= self.timeToComplete:
                 self.prBar.hide()
                 inventory.add(self.inputOutput[self.itemIn], 1, gridCoords = (self.x//BLOCK_SIZE, self.y//BLOCK_SIZE))
+                self.itemIn = None
                 self.empty = True
                 self.holdStart = None
                 self.holdTime = 0
 
+        if ((self.animate and not self.previousAnimate) or (time() > self.endTimeSoundPLayed and self.soundJustPlayed))and self.itemIn is not None:
+            millstoneGrindSound.play()
+            self.soundJustPlayed = True
+            self.endTimeSoundPLayed = time() + millstoneGrindSound.chosenSound.get_length()
+        elif self.previousAnimate and not self.animate:
+            millstoneGrindSound.stop()
+            self.soundJustPlayed = False
+        
         self.prBar.setAnimationFrame(int(
             self.holdTime/self.timeToComplete*len(progressBarSequence)
             ))
 
         self.ticks += 1
+        self.previousAnimate = self.animate
 
     def draw(self, surf=screen):
         if self.empty is True or self.itemIn is None:
@@ -1308,7 +1336,10 @@ class bowlMachine(machine):
         self.possibleItemLocations = []
         self.animIndex = 0
         self.addedTimeThisFrame = False
+        self.soundPlayed = False
         self.maxItems = 20
+        self.previousAddedTimeThisFrame = False
+        self.endTimeSoundPLayed = time()
 
         for xx in range(23,34):
             for yy in range(35,39):
@@ -1361,15 +1392,13 @@ class bowlMachine(machine):
             self.prBar.show()
         if not (mouse[0] and self.getRect().collidepoint((mousex,mousey))):
             self.addedTimeThisFrame = False
-            return
+            self.prBar.hide()
         if not mouse[0] or self.empty:
             # hide bar and stop the charging of it if not mouse pressed or 
             # it's not on the object or it's empty
             if not self.prBar.hidden:
                 self.prBar.hide()
-            return
-
-        if self.holdStart is not None:
+        elif self.holdStart is not None and mouse[0] and self.getRect().collidepoint((mousex,mousey)):
             self.holdTime += dt
             self.addedTimeThisFrame = True
             if self.holdTime >= self.timeToComplete:
@@ -1385,8 +1414,17 @@ class bowlMachine(machine):
                 self.holdStart = None
                 self.holdTime = 0
 
-        self.updatePrBar()
+        if not self.addedTimeThisFrame and self.previousAddedTimeThisFrame:
+            mixingSound.stop()
+            self.soundPlayed = False
+        if ((self.addedTimeThisFrame and not self.previousAddedTimeThisFrame) or (self.endTimeSoundPLayed < time() and self.soundPlayed)) and self.itemsIn:
+            mixingSound.play()
+            self.soundPlayed = True
+            self.endTimeSoundPLayed = time() + mixingSound.chosenSound.get_length()
 
+        if self.timeToComplete != 0:
+            self.updatePrBar()
+        self.previousAddedTimeThisFrame = self.addedTimeThisFrame
         self.ticks += 1
 
     def draw(self, surf=screen):
@@ -1465,6 +1503,7 @@ class brickOvenMachine(machine):
         self.fuelIn = None
         self.itemIn = None
         self.producedItem = None
+        self.soundEndTime = 0
         self.fuelLeft = 0
         self.holdTime = 0
 
@@ -1482,6 +1521,7 @@ class brickOvenMachine(machine):
         self.prBar.hide()
         self.fuelBar.hide()
         self.maxFuel = 0
+        self.wasStopped = False
         self.maxItemPower = 0
         self.justPutTheFuel = False
     def onRightClick(self):
@@ -1548,6 +1588,10 @@ class brickOvenMachine(machine):
         if self.fuelIn is not None and self.itemIn is not None:
             self.holdTime += dt
             self.fuelLeft -= dt
+            if time() > self.soundEndTime or self.wasStopped:
+                fireCracklesSound.play()
+                self.soundEndTime = time() + fireCracklesSound.chosenSound.get_length()
+                self.wasStopped = False
             if self.fuelLeft <= 0:
                 self.fuelIn = None
                 self.fuelBar.hide()
@@ -1561,7 +1605,9 @@ class brickOvenMachine(machine):
                 else:
                     self.producedItem = self.itemIn
                     self.itemIn = None  
-
+        elif self.fuelIn is None or self.itemIn is None:
+            fireCracklesSound.stop()
+            self.wasStopped = True
 
         self.updateProgressBars()
 
@@ -2062,7 +2108,16 @@ musicTheme("Jumping on rocks", getMusicPath("jumping on rocks.mp3"))
 
 # sound effects:
 forestSounds = soundEffect(getSoundEffectPath("forestSounds"), "forestSounds")
+forestSounds.setVolume(0)
 popSound =  soundEffect(getSoundEffectPath("pop"), "pop")
+seedPlantSound = soundEffect(getSoundEffectPath("seedPlant"), "seedPlant")
+wheatHarvestSound = soundEffect(getSoundEffectPath("wheatHarvest"), "wheatHarvest")
+waterPourSound = soundEffect(getSoundEffectPath("waterPouring"), "waterPour")
+millstoneGrindSound = soundEffect(getSoundEffectPath("millstoneGrind"), "millstoneGrind")
+buildSound = soundEffect(getSoundEffectPath("build"), "build")
+sprinkleSound = soundEffect(getSoundEffectPath("sprinkle"), "sprinkle")
+fireCracklesSound = soundEffect(getSoundEffectPath("fireCrackles"), "fireCrackles")
+mixingSound = soundEffect(getSoundEffectPath("mixing"), "mixing")
 
 # buttons
 sell1Button = sellPanelButton(60,560-192, "sell", image=sell1ButtonImage)
@@ -2282,13 +2337,16 @@ def mouseControl():
                 if hoverField is not None:
                     if selectedInvSlot == woodAsh.slot and not hoverField.fertilized:
                         hoverField.fertilize()
+                        sprinkleSound.play()
                         inventory.remove(woodAsh)
                     elif selectedInvSlot == waterBucket.slot and not hoverField.wet:
                         hoverField.makeWet()
+                        waterPourSound.play()
                         inventory.remove(waterBucket)
                 elif selectedInvSlot.item is not None and selectedInvSlot.item.machineClass is not None and hoverField is None and 0 <= mousey//BLOCK_SIZE < 7 and 0 <= mousex//BLOCK_SIZE <= 12 and canPressAgain:
                     if not (int(mousex//BLOCK_SIZE*BLOCK_SIZE),int(mousey//BLOCK_SIZE*BLOCK_SIZE)) in [
                         (ma.x,ma.y) for ma in machines]:
+                        buildSound.play()
                         selectedInvSlot.item.machineClass(mousex//BLOCK_SIZE*BLOCK_SIZE,
                                                           mousey//BLOCK_SIZE*BLOCK_SIZE)
                         inventory.remove(selectedInvSlot.item)

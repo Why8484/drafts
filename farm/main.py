@@ -41,6 +41,7 @@ BIG_FONT_HEIGHT = 66
 font = pygame.font.Font(r"assets\font.ttf",FONT_HEIGHT)
 bigFont = pygame.font.Font(r"assets\font.ttf",BIG_FONT_HEIGHT)
 mediumFont = pygame.font.Font(r"assets\font.ttf", 44)
+comicsansFont = pygame.font.SysFont("comicsansms", 14)
 
 # game flags
 running = True
@@ -71,6 +72,7 @@ selectedInvSlot = None
 GAME_RESET_HAPPENED = False
 DESCRIPTION_LINE_SYMBOLS = 50
 BUTTON_DIM_ALPHA = 162
+objectShowingInfo = None
 dt = 0
 justExited = False
 sineWave = [0.0, 0.087, 0.174, 0.259, 0.342, 0.423, 0.5, 0.574, 0.643, 
@@ -117,14 +119,19 @@ def measureBlockDistance(x1,y1,x2,y2):
 def measureDistance(x1,y1,x2,y2):
     return (abs(x1-x2)**2+abs(y1-y2)**2)*(1/2)
 
-def renderText(text:str,color):
+def renderText(text:str,color:tuple[int]) -> pygame.Surface:
     """Returns a surface of rendered text."""
 
     surf = font.render(text,False,color)
     return surf
 
+def renderComicSansText(text:str,color:tuple[int]) -> pygame.Surface:
+    """Returns a surface of rendered text in comic sans font."""
 
-def renderBigText(text:str,color,size=BIG_FONT_HEIGHT):
+    surf = comicsansFont.render(text,False,color).convert_alpha()
+    return surf
+
+def renderBigText(text:str,color:tuple[int],size:int=BIG_FONT_HEIGHT) -> pygame.Surface:
     """Returns a surface of rendered text in font of custom size."""
 
     if size == BIG_FONT_HEIGHT:
@@ -165,6 +172,23 @@ def addPopUpMessage(text):
     """Adds the wanted text to the screen."""
 
     popUp(text, 80, (222, 77, 64, 255), (WIDTH//2, 440))
+
+def timeToString(timeInSeconds:float|str) -> str:
+    """Converts time in seconds to string in format 3 minutes and 23 seconds."""
+    
+    if isinstance(timeInSeconds, str):
+        return timeInSeconds
+
+    hours = int(timeInSeconds//3600)
+    minutes = int((timeInSeconds%3600)//60)
+    seconds = int(timeInSeconds%60)
+
+    if hours > 0:
+        return f"{hours} hours, {minutes} minutes and {seconds} seconds"
+    elif minutes > 0:
+        return f"{minutes} minutes and {seconds} seconds"
+    else:
+        return f"{seconds} seconds"
 
 def nearestSpace(string: str, index: int) -> int:
     """Finds the index of the nearest space to index given in string `string`.
@@ -269,6 +293,7 @@ bowlStickSequence = loadFromFolder("bowlStick")
 sellPanelBG = pygame.transform.scale_by(loadImage("sellPanelBG.png"),2)
 tileVariants = loadFromFolder("tileVariants")
 shadowImage = loadImage("shadow.png")
+infoBG = loadImage("infoBG.png")
 
 def loadItemAtrribute(objDict, attrName):
     """Loads object's atrribute if it should be equal to item class object. 
@@ -519,6 +544,7 @@ class musicTheme:
         self.name = name
         self.audioPath = audioPath
         self.sound = pygame.mixer.Sound(audioPath)
+        self.sound.set_volume(0.4)
         self.length = self.sound.get_length()
         musicThemes.append(self)
 
@@ -658,8 +684,13 @@ class field(entity):
         self.gridx = gridx
         self.gridy = gridy
         self.multiplier = 1
+
         self.fertilized = False
         self.wet = False
+
+        self.infoVisibility = False
+
+        self.updateInfo()
         findAreaByGridCoords(gridx,gridy).object = self
 
         super().__init__(x, y, 0, image=soilImage)
@@ -670,20 +701,84 @@ class field(entity):
         self.multiplier *= 2
         self.image = fertilizedSoilImage if not self.wet else fertilizedWetSoilImage
         self.fertilized = True
+        self.updateInfo()
 
     def makeWet(self):
         """multipliy multiplier by 1.4."""
         self.multiplier *= 1.4
         self.image = wetSoilImage if not self.fertilized else fertilizedWetSoilImage
         self.wet = True
+        self.updateInfo()
 
+    def showInfo(self):
+        """Shows info about this field. Used when hovered over it."""
+        global objectShowingInfo
+
+        if self.infoVisibility:
+            return
+
+        objectShowingInfo.hideInfo() if objectShowingInfo is not None and not objectShowingInfo == self else None
+        self.infoEntity = entity(self.x - 60, self.y - 120, image=self.infoImage, layer=5)
+        objectShowingInfo = self
+        self.infoVisibility = True
+
+    def hideInfo(self):
+        """Hides info about this field. Used when hovered over it."""
+        global objectShowingInfo
+
+        if objectShowingInfo == self:
+            objectShowingInfo = None
+
+        if not self.infoVisibility:
+            return
+
+        if self.infoEntity in entities:
+            entities.remove(self.infoEntity)
+        self.infoVisibility = False
+
+    def updateInfo(self):
+        """Updates the info in the info pop up."""
+        # info pop up:
+
+        self.infoImage = infoBG.copy()
+        title = renderText("Farmland", "black")
+        fertilizedText = renderComicSansText("fertilized with: ", "black")
+        multiplierText = renderComicSansText("growth multiplier: " + str(self.multiplier), "black")
+        if self.plant is not None and self.plant.phase < len(self.plant.growthSequence)-1:
+            plantTimeLeft = (self.plant.fullGrowthTime - self.plant.fullTimePlanted)/self.multiplier
+        else:
+            plantTimeLeft = "-"
+        plantTimeText = renderComicSansText("plant growth time left:", "black")
+        plantTimeValueText = renderComicSansText(timeToString(plantTimeLeft), "black")
+
+        self.infoImage.blit(title, (100-title.get_width()//2, 10))
+        self.infoImage.blit(fertilizedText, (15, 40))
+        self.infoImage.blit(multiplierText, (15, 80))
+        self.infoImage.blit(plantTimeText, (15, 100))
+        self.infoImage.blit(plantTimeValueText, (15, 120))
+
+        # draw icons based on fertilization
+        if self.fertilized and not self.wet:
+            self.infoImage.blit(pygame.transform.scale_by(woodAshImage, 0.4), (15+5+fertilizedText.get_width(), 40))
+        elif self.wet and not self.fertilized:
+            self.infoImage.blit(pygame.transform.scale_by(waterBucketImage, 0.4), (15+5+fertilizedText.get_width(), 40))
+        elif self.fertilized and self.wet:
+            self.infoImage.blit(pygame.transform.scale_by(woodAshImage, 0.4), (15+5+fertilizedText.get_width(), 40))
+            self.infoImage.blit(pygame.transform.scale_by(waterBucketImage, 0.4), (15+5+32+fertilizedText.get_width(), 40))
+
+        if self.infoVisibility:
+            self.infoEntity.image = self.infoImage
+        
     @classmethod
     def loadObject(cls, objectDict):
+        """Load the object from save file."""
+
         newField = field(objectDict["gridx"], objectDict["gridy"])
         if objectDict["wet"]:
             newField.makeWet()
         if objectDict["fertilized"]:
             newField.fertilize()
+        newField.updateInfo()
         if objectDict["plant"] is not None:
             wheatDict = objectDict["plant"]
             newWheat = wheat(newField)
@@ -697,6 +792,8 @@ class field(entity):
         if not self.plant is None:
             self.plant.draw()
 
+
+
 class wheat(entity):
     """Wheat object that grows on certain field. List: plants."""
     def __init__(self, field:field):
@@ -704,17 +801,24 @@ class wheat(entity):
         field.plant = self
         self.growthSequence = wheatGrowth
         self.timePlanted = 0
+        self.fullTimePlanted = 0
+
         x,y = field.x,field.y-40
         self.phase = 0
         self.growthTime = [random.randint(16,24),
                            random.randint(22,38),
                            random.randint(14,38),
                            random.randint(38,50)]
+        self.fullGrowthTime = sum(self.growthTime)
+        self.field.updateInfo()
         super().__init__(x,y, 1, BLOCK_SIZE, BLOCK_SIZE, self.growthSequence[self.phase])
         plants.append(self)
     def increaseTimePlanted(self):
         """Adds dt to time planted."""
         self.timePlanted += dt*self.field.multiplier
+        self.fullTimePlanted += dt*self.field.multiplier
+        self.field.updateInfo()
+                        
         if self.phase < len(self.growthSequence)-1 and self.timePlanted > self.growthTime[self.phase]:
             self.timePlanted = 0
             self.phase += 1
@@ -860,6 +964,32 @@ class inventory:
         for s in slots:
             s.x += index*1280
 
+
+def divideText(text: str, lineSymbolCount: int = DESCRIPTION_LINE_SYMBOLS) -> str:
+    """Divide text into lines using the configured description line length."""
+    text = text.replace("\n", " ")
+    if not text:
+        return ""
+
+    lines = []
+    previous = 0
+    lastChar = text[-1]
+    if lineSymbolCount != DESCRIPTION_LINE_SYMBOLS:
+        pass
+    for symbol in range(0, len(text), lineSymbolCount):
+        lineEndIndex = nearestSpace(text, symbol + lineSymbolCount)
+        lines.append(text[previous:lineEndIndex])
+        previous = lineEndIndex
+
+    dividedText = ""
+    for lineIndex, line in enumerate(lines):
+        dividedText += line
+        if lineIndex != len(lines) - 1:
+            dividedText += "\n"
+
+    return dividedText + lastChar
+
+
 class item:
     """Class for items that show up in the inventory space. List: existingItems."""
     def __init__(self, image, name,layer=0,description="",machineClass=None):
@@ -878,24 +1008,7 @@ class item:
         invPanel.blit(self.title,(x+BLOCK_SIZE//2-self.title.get_width()//2,y+BLOCK_SIZE+10))
 
     def divideDescription(self):
-        self.description = self.description.replace("\n", " ")
-        lines = []
-        previous = 0
-        lastChar = list(self.description)[-1]
-        for symbol in range(0,len(list(self.description)), DESCRIPTION_LINE_SYMBOLS):
-            lineEndIndex = nearestSpace(self.description, symbol+DESCRIPTION_LINE_SYMBOLS)
-            lines.append(self.description[previous:lineEndIndex])
-            previous = lineEndIndex
-
-        self.description = ""
-        for line in lines:
-            if lines.index(line) == len(lines)-1:
-                self.description = self.description + line
-                continue
-            self.description = self.description + line + "\n"
-
-
-        self.description = self.description + lastChar
+        self.description = divideText(self.description)
 
 class slot:
     """Class for inventory slots. List: slots."""
@@ -1491,6 +1604,7 @@ class brickOvenMachine(machine):
         newMachine.fuelIn = loadItemAtrribute(objectDict, "fuelIn")
         newMachine.ticks = objectDict["ticks"]
         newMachine.updateProgressBars()
+
     def updateProgressBars(self):
         if self.holdTime > 0 and self.itemIn is not None:
             self.prBar.setAnimationFrame(int(
@@ -2131,14 +2245,22 @@ def setSlotIndexOnPage(index):
 
 def mouseControl():
     """Covers everything that is activated with mouse."""
-    global canPressAgain,newFarmlandCreated,selectedInvSlot,justExited,actionOnInputEnd
+    global canPressAgain,newFarmlandCreated,selectedInvSlot,justExited,actionOnInputEnd,objectShowingInfo
 
     mouse = pygame.mouse.get_pressed()
     mousex,mousey = pygame.mouse.get_pos()
 
+    hoverField:field = findFieldByCoords((mousex,mousey))
+
+    if hoverField is not None:
+        objectShowingInfo.hideInfo() if objectShowingInfo is not None and objectShowingInfo != hoverField else None
+        hoverField.showInfo()
+    elif objectShowingInfo is not None:
+        objectShowingInfo.hideInfo()
+
     if mouse[2] and 0 < mousex < WIDTH and 0 < mousey < HEIGHT:
         if not sellPanelOpened:
-            hoverField:field = findFieldByCoords((mousex,mousey))
+
             if hoverField is None and farmland in inventory.items and selectedInvSlot == farmland.slot:
                 fieldx,fieldy = mousex//BLOCK_SIZE,mousey//BLOCK_SIZE
                 if 0 <= fieldx <= 12 and 0 <= fieldy <= 6:
@@ -2153,17 +2275,17 @@ def mouseControl():
     
                     inventory.remove(farmland)
                     newFarmlandCreated = True
-            elif not newFarmlandCreated :
+            elif not newFarmlandCreated:
                 if selectedInvSlot == wheatSeeds.slot and not mouse[0]:
                     placePlant(hoverField)
-                elif selectedInvSlot == woodAsh.slot and hasattr(
-                    hoverField, "fertilized") and not hoverField.fertilized:
-                    hoverField.fertilize()
-                    inventory.remove(woodAsh)
-                elif selectedInvSlot == waterBucket.slot and hasattr(
-                    hoverField, "wet") and not hoverField.wet:
-                    hoverField.makeWet()
-                    inventory.remove(waterBucket)
+                    return
+                if hoverField is not None:
+                    if selectedInvSlot == woodAsh.slot and not hoverField.fertilized:
+                        hoverField.fertilize()
+                        inventory.remove(woodAsh)
+                    elif selectedInvSlot == waterBucket.slot and not hoverField.wet:
+                        hoverField.makeWet()
+                        inventory.remove(waterBucket)
                 elif selectedInvSlot.item is not None and selectedInvSlot.item.machineClass is not None and hoverField is None and 0 <= mousey//BLOCK_SIZE < 7 and 0 <= mousex//BLOCK_SIZE <= 12 and canPressAgain:
                     if not (int(mousex//BLOCK_SIZE*BLOCK_SIZE),int(mousey//BLOCK_SIZE*BLOCK_SIZE)) in [
                         (ma.x,ma.y) for ma in machines]:

@@ -692,6 +692,11 @@ class field(entity):
             newWheat.timePlanted = wheatDict["timePlanted"]
             newWheat.image = newWheat.growthSequence[newWheat.phase]
 
+    def draw(self, surf=screen):
+        super().draw(surf)
+        if not self.plant is None:
+            self.plant.draw()
+
 class wheat(entity):
     """Wheat object that grows on certain field. List: plants."""
     def __init__(self, field:field):
@@ -2319,8 +2324,6 @@ def control():
                     BUY_PANEL_PRICE_LIST[selectedSellableItem.name]*inputValueToInt()), "black")
     else:
         buyCustomLine.image = renderText("","black")
-    
-
 
     # reset can type again
     if not any(keys):
@@ -2351,8 +2354,6 @@ def render():
     screen.fill("white")
     entities.sort(key=lambda x: x.layer)
     for ent in entities:
-        if isinstance(ent,wheat):
-            pass
         ent.draw()
     updateFrame = False
 

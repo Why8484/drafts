@@ -11,42 +11,66 @@ import sys
 pygame.init()
 HEIGHT = 720
 WIDTH = 1280
+# screens
 screen = pygame.display.set_mode((WIDTH,HEIGHT))
 invPanel = pygame.Surface((WIDTH, 160)) # 1280 X 160
 sellPanel = pygame.Surface((WIDTH,560)) # 1280 X 560
 transitionScreen = pygame.Surface((WIDTH,HEIGHT), flags=pygame.SRCALPHA) # 1280 X 720 overlay for transitions
-sellPanelOpened = False
+
+# clock and title
 clock = pygame.time.Clock()
 pygame.display.set_caption("farm")
+
+# inventory
 INVENTORY_BG = (245,241,127)
-MAX_FPS = 120
+SLOTS_PER_PAGE = 5
+
+# TILE GRID
 BLOCK_SIZE = 80
 GRID_WIDTH = int(WIDTH/BLOCK_SIZE) #16
 GRID_HEIGHT = int(HEIGHT/BLOCK_SIZE)  #9
+
+# FPS
+MAX_FPS = 120
+TIME_PER_FRAME = 1/MAX_FPS
+
+
+# fonts
 FONT_HEIGHT = 30
 BIG_FONT_HEIGHT = 66
-SLOTS_PER_PAGE = 5
-BUTTON_DIM_ALPHA = 162
-TIME_PER_FRAME = 1/MAX_FPS
 font = pygame.font.Font(r"assets\font.ttf",FONT_HEIGHT)
 bigFont = pygame.font.Font(r"assets\font.ttf",BIG_FONT_HEIGHT)
 mediumFont = pygame.font.Font(r"assets\font.ttf", 44)
+
+# game flags
 running = True
 updateFrame = True
 newFarmlandCreated = False
-canPressAgain = True
-inputValue = ""
-typingPosition = 780,100
-actionOnInputEnd = None
+sellPanelOpened = False
+
+# forest sounds
+forestSoundPlaying = None
+forestSoundEndTime = time()
+
+# music
 lastMusicTime = 0
 lastMusicEndTime = time()
 intervalBetweenMusic = [60,300]
 currentMusicInterval = random.randint(intervalBetweenMusic[0], intervalBetweenMusic[1])
+musicPlaying = None
+
+# controls
 canTypeAgain = True
-soundPlaying = None
+canPressAgain = True
+inputValue = ""
+typingPosition = 780,100
+actionOnInputEnd = None
+
+# other
 selectedInvSlot = None
 GAME_RESET_HAPPENED = False
 DESCRIPTION_LINE_SYMBOLS = 50
+BUTTON_DIM_ALPHA = 162
 dt = 0
 justExited = False
 sineWave = [0.0, 0.087, 0.174, 0.259, 0.342, 0.423, 0.5, 0.574, 0.643, 
@@ -173,7 +197,7 @@ def loadImage(path,join=True):
         pygame.Surface image loaded using the path given."""
 
     
-    joinedPath = os.path.join("assets",path) if join else path
+    joinedPath = os.path.join("assets\\images",path) if join else path
 
     return pygame.image.load(joinedPath).convert_alpha()
 
@@ -186,7 +210,7 @@ def loadFromFolder(folderPath):
         list with pygame.Surface objects."""
 
     imageSequence = []
-    joindeFolderPath = os.path.join("assets",folderPath)
+    joindeFolderPath = os.path.join("assets\\images",folderPath)
     for fileName in os.listdir(joindeFolderPath):
         joinedPath = os.path.join(joindeFolderPath,fileName)
         if joinedPath.endswith((".png",".jpg","jpeg")):
@@ -481,33 +505,49 @@ def controlSPBDimming():
     elif selectedSellableItem.item not in inventory.items:
         writeSPBMessages("sell", "Hey, i won't invest in something, that doesn't exist.")
 
-def getSoundPath(filename):
+def getMusicPath(filename):
     """Joins the filename with assets\\audio."""
-    return os.path.join("assets\\audio", filename)
+    return os.path.join("assets\\audio\\music", filename)
 
-musicThemes = []
+def getSoundEffectPath(folderPath):
+    """Joins the folder path with assets\\audio\\sound effects."""
+    return os.path.join("assets\\audio\\sound effects", folderPath)
 
-class sound:
-    """Class for sounds."""
-    def __init__(self, name, audioPath, type="sound"):
+class musicTheme:
+    """Class for music."""
+    def __init__(self, name, audioPath):
         self.name = name
         self.audioPath = audioPath
         self.sound = pygame.mixer.Sound(audioPath)
         self.length = self.sound.get_length()
-        if type == "music":
-            musicThemes.append(self)
+        musicThemes.append(self)
 
     def play(self):
-        global soundPlaying, lastMusicTime
+        global musicPlaying, lastMusicTime
 
         self.sound.play()
-        soundPlaying = self
+        musicPlaying = self
         lastMusicTime = time()
 
-sound("Listen to the rain", getSoundPath("listen to the rain.mp3"), type="music")
-sound("Gate of heaven", getSoundPath("gate of heaven.mp3"), type="music")
-sound("Path to the sun", getSoundPath("path to the sun.mp3"), type="music")
-sound("Jumping on rocks", getSoundPath("jumping on rocks.mp3"), type="music")
+class soundEffect:
+    """Class for sound effect with pitch variants."""
+    def __init__(self, audioFolderPath, name):
+        self.name = name
+        self.audioFolderPath = audioFolderPath
+        self.sounds:list[pygame.mixer.Sound] = []
+        for audioFilename in os.listdir(audioFolderPath):
+            self.sounds.append(pygame.mixer.Sound(os.path.join(audioFolderPath, audioFilename)))
+        self.currentSoundLength = 0
+
+    def play(self):
+        global forestSoundPlaying
+
+        chosenSound = random.choice(self.sounds)
+        chosenSound.play()
+        chosenSound.set_volume(0.3)
+        self.currentSoundLength = chosenSound.get_length()
+        if self.name == "forestSounds":
+            forestSoundPlaying = chosenSound
 
 class entity:
     """Every object on a screen. List: entities"""
@@ -1629,6 +1669,7 @@ shadows: list[shadow] = []
 existingItems:dict[str, item] = {}
 transitions:list[transition] = []
 popUps:list[popUp] = []
+musicThemes:list[musicTheme] = []
 
 # create slots
 for page in range(6):
@@ -1893,6 +1934,16 @@ loadClassesDict = {
     "bowlMachine": bowlMachine,
     "millstoneMachine": millstoneMachine,
 }
+
+# music:
+musicTheme("Listen to the rain", getMusicPath("listen to the rain.mp3"))
+musicTheme("Gate of heaven", getMusicPath("gate of heaven.mp3"))
+musicTheme("Path to the sun", getMusicPath("path to the sun.mp3"))
+musicTheme("Jumping on rocks", getMusicPath("jumping on rocks.mp3"))
+
+# sound effects:
+forestSounds = soundEffect(getSoundEffectPath("forestSounds"), "forestSounds")
+popSound =  soundEffect(getSoundEffectPath("pop"), "pop")
 
 # buttons
 sell1Button = sellPanelButton(60,560-192, "sell", image=sell1ButtonImage)
@@ -2275,9 +2326,19 @@ def control():
     if not any(keys):
         canTypeAgain = True
 
-
-
     mouseControl()
+
+def playForestSounds():
+    global forestSoundPlaying, forestSoundEndTime
+
+    if forestSoundPlaying is None and time() > forestSoundEndTime:
+        # check if no sound's playing and enough time has passed since the last one was playing
+
+        forestSounds.play() # play the sound
+        forestSoundEndTime = time() + forestSounds.currentSoundLength # calculate end time (assuming it's the longest sound playing)
+
+    if forestSoundEndTime < time():
+        forestSoundPlaying = None
 
 def render():
     """Covers the rendering of the game."""
@@ -2316,13 +2377,13 @@ def applyTransitions():
         t.applyTransition()
 
 def handleMusic():
-    global musicThemes, lastMusicTime, intervalBetweenMusic, currentMusicInterval, soundPlaying, lastMusicEndTime
+    global musicThemes, lastMusicTime, intervalBetweenMusic, currentMusicInterval, musicPlaying, lastMusicEndTime
 
-    if soundPlaying is not None and time() - lastMusicTime > soundPlaying.length:
-        soundPlaying = None
+    if musicPlaying is not None and time() - lastMusicTime > musicPlaying.length:
+        musicPlaying = None
         lastMusicEndTime = time()
 
-    elif time() - lastMusicEndTime > currentMusicInterval and soundPlaying is None:
+    elif time() - lastMusicEndTime > currentMusicInterval and musicPlaying is None:
         random.choice(musicThemes).play()
         currentMusicInterval = random.randint(intervalBetweenMusic[0], intervalBetweenMusic[1])
 
@@ -2341,6 +2402,7 @@ def update():
 
     applyTransitions()
     handleMusic()
+    playForestSounds()
 
 selectedInvSlot = slots[0]
 screen.fill("white")

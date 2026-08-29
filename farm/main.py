@@ -1782,6 +1782,7 @@ class popUp:
         self.alpha = 255
         self.fadeSpeed = 255 / duration if duration > 0 else 255
         self.isFinished = False
+        boomSound.play()
         
         # Register to global tracking lists
         popUps.append(self)
@@ -1985,6 +1986,7 @@ def sellCheck():
     if not selectedSellableItem.sellable:
         return False
 
+    popSound.play()
     return True
 
 def buyCheck(amt=1):
@@ -1996,7 +1998,7 @@ def buyCheck(amt=1):
     if inventory.coins < BUY_PANEL_PRICE_LIST[selectedSellableItem.name]*amt:
         return False
 
-
+    buySound.play()
     return True
 
 def sell1():
@@ -2066,6 +2068,7 @@ def sellCustom():
             selectedSellableItem.select()
 
         actionOnInputEnd = None
+        popSound.play()
 
     actionOnInputEnd = sellCustomAmt
     inputValue = "-"
@@ -2089,6 +2092,8 @@ def buyCustom():
         inventory.add(selectedSellableItem.item, amt, gridCoords = (selectedSellableItem.x//BLOCK_SIZE, selectedSellableItem.y//BLOCK_SIZE))
         actionOnInputEnd = None
 
+        buySound.play()
+
     actionOnInputEnd = buyCustomAmt
     inputValue = "-"
     selectedSellableItem.select()
@@ -2108,7 +2113,6 @@ musicTheme("Jumping on rocks", getMusicPath("jumping on rocks.mp3"))
 
 # sound effects:
 forestSounds = soundEffect(getSoundEffectPath("forestSounds"), "forestSounds")
-forestSounds.setVolume(0)
 popSound =  soundEffect(getSoundEffectPath("pop"), "pop")
 seedPlantSound = soundEffect(getSoundEffectPath("seedPlant"), "seedPlant")
 wheatHarvestSound = soundEffect(getSoundEffectPath("wheatHarvest"), "wheatHarvest")
@@ -2118,6 +2122,8 @@ buildSound = soundEffect(getSoundEffectPath("build"), "build")
 sprinkleSound = soundEffect(getSoundEffectPath("sprinkle"), "sprinkle")
 fireCracklesSound = soundEffect(getSoundEffectPath("fireCrackles"), "fireCrackles")
 mixingSound = soundEffect(getSoundEffectPath("mixing"), "mixing")
+buySound = soundEffect(getSoundEffectPath("buy"), "buy")
+boomSound = soundEffect(getSoundEffectPath("boom"), "boom")
 
 # buttons
 sell1Button = sellPanelButton(60,560-192, "sell", image=sell1ButtonImage)
@@ -2588,7 +2594,7 @@ def update():
 selectedInvSlot = slots[0]
 screen.fill("white")
 loadGame()
-
+selectedSellableItem.select()
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:

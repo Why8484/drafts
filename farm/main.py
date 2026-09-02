@@ -7,6 +7,7 @@ from copy import copy
 import ast
 import pygame
 import sys
+from typing import Callable
 
 pygame.init()
 HEIGHT = 720
@@ -37,11 +38,12 @@ TIME_PER_FRAME = 1/MAX_FPS
 
 # fonts
 FONT_HEIGHT = 30
-BIG_FONT_HEIGHT = 66
+COMIC_FONT_HEIGHT = 14
 font = pygame.font.Font(r"assets\font.ttf",FONT_HEIGHT)
-bigFont = pygame.font.Font(r"assets\font.ttf",BIG_FONT_HEIGHT)
-mediumFont = pygame.font.Font(r"assets\font.ttf", 44)
-comicsansFont = pygame.font.SysFont("comicsansms", 14)
+fontSizes: dict[int: pygame.font.Font] = {FONT_HEIGHT: font}
+comicsansFont = pygame.font.SysFont("comicsansms", COMIC_FONT_HEIGHT)
+comicFontSizes: dict[int: pygame.font.Font] = {COMIC_FONT_HEIGHT: comicsansFont}
+
 
 # game flags
 running = True
@@ -69,12 +71,15 @@ actionOnInputEnd = None
 
 # other
 selectedInvSlot = None
+infoPopUpTimer = None
+hoverObject = None
+hoverStart = 0
+HOVER_TIME_FOR_INFO = 3
 GAME_RESET_HAPPENED = False
 DESCRIPTION_LINE_SYMBOLS = 50
 BUTTON_DIM_ALPHA = 162
 objectShowingInfo = None
 dt = 0
-justExited = False
 sineWave = [0.0, 0.087, 0.174, 0.259, 0.342, 0.423, 0.5, 0.574, 0.643, 
             0.707, 0.766, 0.819, 0.866, 0.906, 0.94, 0.966,
             0.985, 0.996, 1.0, 0.996, 0.985, 0.966, 0.94, 0.906, 0.866, 
@@ -119,34 +124,36 @@ def measureBlockDistance(x1,y1,x2,y2):
 def measureDistance(x1,y1,x2,y2):
     return (abs(x1-x2)**2+abs(y1-y2)**2)*(1/2)
 
-def renderText(text:str,color:tuple[int]) -> pygame.Surface:
-    """Returns a surface of rendered text."""
+def renderText(text:str,color:tuple[int], size:int = 30, fontType = "regular") -> pygame.Surface:
+    """Returns a surface with rendered text."""
 
-    surf = font.render(text,False,color)
+    # specify the font that will be used
+    try:
+        if fontType == "regular":
+            usingFont = fontSizes[size]
+        else:
+            usingFont = comicFontSizes[size]
+    except:
+        if fontType == "regular":
+            usingFont = fontSizes[size] = pygame.font.Font("assets\\font.ttf", size)
+        else:
+            usingFont = comicFontSizes[size] = pygame.font.SysFont("comicsansms", size)
+
+    surf = usingFont.render(text, False, color)
+
     return surf
+        
+def writeOnCanvas(canvas:pygame.Surface, text:str, textSize: int, x:int|float, y:int|float, color:tuple[int]|str = "black",fontType:str = "regular") -> pygame.Surface:
+    """Renders text on a given canvas, then returns it."""
 
-def renderComicSansText(text:str,color:tuple[int]) -> pygame.Surface:
-    """Returns a surface of rendered text in comic sans font."""
+    canvas.blit(renderText(text, color, textSize, fontType), (x,y))
+    return canvas
 
-    surf = comicsansFont.render(text,False,color).convert_alpha()
-    return surf
+def drawOnCanvas(canvas:pygame.Surface, image:pygame.Surface, x:int|float, y:int|float, scale:float = 1) -> pygame.Surface:
+    """Renders scaled image on a given canvas, then returns it."""
 
-def renderBigText(text:str,color:tuple[int],size:int=BIG_FONT_HEIGHT) -> pygame.Surface:
-    """Returns a surface of rendered text in font of custom size."""
-
-    if size == BIG_FONT_HEIGHT:
-        surf = bigFont.render(text,False,color).convert_alpha()
-    elif size == 44:
-        surf = mediumFont.render(text,False,color).convert_alpha()
-    else:
-        # custom sized font
-        surf = pygame.font.Font(r"assets\font.ttf", size).render(text,False,color).convert_alpha()
-
-    bgSurf = pygame.Surface(surf.get_size(), flags=pygame.SRCALPHA)
-
-    bgSurf.blit(surf, (0,0))
-    
-    return bgSurf
+    canvas.blit(pygame.transform.scale_by(image, scale), (x,y))
+    return canvas
 
 def displayLetterAmount(amt):
     """Displays the number as 9.0K, 56M etc."""
@@ -294,6 +301,9 @@ sellPanelBG = pygame.transform.scale_by(loadImage("sellPanelBG.png"),2)
 tileVariants = loadFromFolder("tileVariants")
 shadowImage = loadImage("shadow.png")
 infoBG = loadImage("infoBG.png")
+finalProgressImage = loadImage("finalProgress.png")
+
+INFO_BG_WIDTH, INFO_BG_HEIGHT = infoBG.get_size()
 
 def loadItemAtrribute(objDict, attrName):
     """Loads object's atrribute if it should be equal to item class object. 
@@ -431,6 +441,15 @@ def findFieldByCoords(coords):
 
     areaOnCoords = findAreaByGridCoords(areaX,areaY)
     return areaOnCoords.object
+
+def findMachineByCoords(coords):
+    """Returns a `machine` object placed on given coords. If 
+    no machine's there, returns none"""
+
+    for m in machines:
+        if (m.x,m.y) == coords:
+            return m
+    return None
 
 def findFieldByGridCoords(gridx,gridy):
     """Finds an field object that has grid coordinates given.
@@ -663,6 +682,27 @@ class entity:
     def drawOnOverlay(self,surf=transitionScreen):
         surf.blit(self.image, (self.x,self.y))
 
+    def moveInBounds(self):
+        """Moves the entity which is partly/fully out of screen bounds in them, 
+        while making sure the entity travels shortest distance possible."""
+
+        self.updateSides()
+
+        if (0 < self.x < WIDTH and 0 < self.right < WIDTH) and (
+            0 < self.y < HEIGHT and 0 < self.bottom < HEIGHT):
+            return
+
+        if self.x < 0:
+            self.x = 0
+        elif self.right > WIDTH:
+            self.x = WIDTH - self.width
+
+        if self.y < 0:
+            self.y = 0
+        elif self.bottom > HEIGHT:
+            self.y = HEIGHT - self.height
+
+
 class obstacle(entity):
     """Object that is a collider and is in colliders list. List: colliders."""
     def __init__(self, x, y, layer=0, width=0, height=0, image=None):
@@ -730,7 +770,9 @@ class field(entity):
             return
 
         objectShowingInfo.hideInfo() if objectShowingInfo is not None and not objectShowingInfo == self else None
+        self.updateInfo()
         self.infoEntity = entity(self.x - 60, self.y - 120, image=self.infoImage, layer=5)
+        self.infoEntity.moveInBounds()
         objectShowingInfo = self
         self.infoVisibility = True
 
@@ -744,6 +786,7 @@ class field(entity):
         if not self.infoVisibility:
             return
 
+        self.updateInfo()
         if self.infoEntity in entities:
             entities.remove(self.infoEntity)
         self.infoVisibility = False
@@ -753,30 +796,26 @@ class field(entity):
         # info pop up:
 
         self.infoImage = infoBG.copy()
-        title = renderText("Farmland", "black")
-        fertilizedText = renderComicSansText("fertilized with: ", "black")
-        multiplierText = renderComicSansText("growth multiplier: " + str(self.multiplier), "black")
         if self.plant is not None and self.plant.phase < len(self.plant.growthSequence)-1:
             plantTimeLeft = (self.plant.fullGrowthTime - self.plant.fullTimePlanted)/self.multiplier
         else:
             plantTimeLeft = "-"
-        plantTimeText = renderComicSansText("plant growth time left:", "black")
-        plantTimeValueText = renderComicSansText(timeToString(plantTimeLeft), "black")
 
-        self.infoImage.blit(title, (100-title.get_width()//2, 10))
-        self.infoImage.blit(fertilizedText, (15, 40))
-        self.infoImage.blit(multiplierText, (15, 80))
-        self.infoImage.blit(plantTimeText, (15, 100))
-        self.infoImage.blit(plantTimeValueText, (15, 120))
+        writeOnCanvas(self.infoImage, "farmland", 30, 57, 10)
+        writeOnCanvas(self.infoImage, "growth multiplier: " + str(self.multiplier), COMIC_FONT_HEIGHT, 15, 80, fontType="comic")
+        writeOnCanvas(self.infoImage, "plant growth time left:", COMIC_FONT_HEIGHT, 15, 100, fontType="comic")
+        writeOnCanvas(self.infoImage, timeToString(plantTimeLeft), COMIC_FONT_HEIGHT, 15, 120, fontType="comic")
+        if self.fertilized or self.wet:
+            writeOnCanvas(self.infoImage, "fertilized with: ", COMIC_FONT_HEIGHT, 15, 40, fontType="comic")
 
-        # draw icons based on fertilization
-        if self.fertilized and not self.wet:
-            self.infoImage.blit(pygame.transform.scale_by(woodAshImage, 0.4), (15+5+fertilizedText.get_width(), 40))
-        elif self.wet and not self.fertilized:
-            self.infoImage.blit(pygame.transform.scale_by(waterBucketImage, 0.4), (15+5+fertilizedText.get_width(), 40))
-        elif self.fertilized and self.wet:
-            self.infoImage.blit(pygame.transform.scale_by(woodAshImage, 0.4), (15+5+fertilizedText.get_width(), 40))
-            self.infoImage.blit(pygame.transform.scale_by(waterBucketImage, 0.4), (15+5+32+fertilizedText.get_width(), 40))
+            # draw icons based on fertilization
+            if self.fertilized and not self.wet:
+                drawOnCanvas(self.infoImage, woodAshImage, 113, 40, 0.4)
+            elif self.wet and not self.fertilized:
+                drawOnCanvas(self.infoImage, waterBucketImage, 113, 40, 0.4)
+            elif self.fertilized and self.wet:
+                drawOnCanvas(self.infoImage, woodAshImage, 113, 40, 0.4)
+                drawOnCanvas(self.infoImage, waterBucketImage, 145, 40, 0.4)
 
         if self.infoVisibility:
             self.infoEntity.image = self.infoImage
@@ -914,9 +953,9 @@ class inventory:
         invPanel.blit(coinImage,(1080,invPanel.get_height()-90))
         leftButtonEnt.draw(invPanel)
         rightButtonEnt.draw(invPanel)
-        invPanel.blit(renderBigText(str(displayCoinsAmount()),"black",44),
+        invPanel.blit(renderText(str(displayCoinsAmount()),"black",44),
                       (1165,invPanel.get_height()-60))
-        invPanel.blit(renderBigText("currently on page: " + str(inventory.page), "black",33),
+        invPanel.blit(renderText("currently on page: " + str(inventory.page), "black",33),
                       (1060, 10))
 
 
@@ -1076,7 +1115,7 @@ class sellPanelItem(sellPanelObject):
             descLine.image = renderText("","black")
         for i,line in enumerate(self.item.description.splitlines()):
             descriptionLines[i].image = renderText(line, "black")
-        descriptionTitle.image = renderBigText(self.name, "black")
+        descriptionTitle.image = renderText(self.name, "black", 66, )
         descriptionTitle.x = 317 + descriptionPanel[0] - descriptionTitle.image.get_width()//2
         if self.name in BUY_PANEL_PRICE_LIST:
             buyPrice = "Buy for: " + str(BUY_PANEL_PRICE_LIST[self.name]) + "." 
@@ -1171,6 +1210,9 @@ class machine(entity):
     def __init__(self, x, y, image):
         super().__init__(x, y, 0,BLOCK_SIZE,BLOCK_SIZE,image)
         machines.append(self)
+        self.infoImage = infoBG
+        self.infoVisibility = False
+        self.updateInfo()
         shadow(self.x-10,self.y+60)
 
     def onLeftClick(self):
@@ -1181,15 +1223,47 @@ class machine(entity):
 
     def onTick(self):
         pass
-        
+
+    def updateInfo(self):
+        """Updates info pop up about the machine."""
+        pass
+
+    def showInfo(self):
+        """Makes the info pop up visible."""
+        global objectShowingInfo
+
+        if self.infoVisibility:
+            return
+
+        objectShowingInfo.hideInfo() if objectShowingInfo is not None and not objectShowingInfo == self else None
+        self.updateInfo()
+        self.infoEntity = entity(self.x - 60, self.y - 120, image=self.infoImage, layer=5)
+        self.infoEntity.moveInBounds()
+        objectShowingInfo = self
+        self.infoVisibility = True
+
+    def hideInfo(self):
+        """Makes the info pop up invisible."""
+        global objectShowingInfo
+
+        if objectShowingInfo == self:
+            objectShowingInfo = None
+
+        if not self.infoVisibility:
+            return
+
+        if self.infoEntity in entities:
+            entities.remove(self.infoEntity)
+        self.infoVisibility = False
 
 class millstoneMachine(machine):
     """Millstone."""
     def __init__(self, x, y):
-        super().__init__(x, y, millstoneImage)
         self.holdStart = None
         self.holdTime = 0
-        self.timeToComplete = 100 # 20
+        self.itemIn = None
+        self.timeToComplete = 20 # 20
+        super().__init__(x, y, millstoneImage)
         self.animIndex = 0
         self.heightIndex = 0
         barX,barY = self.x-5,self.y-15
@@ -1199,7 +1273,7 @@ class millstoneMachine(machine):
             barY = 0
         self.prBar = progressBar(barX,barY)
         self.empty = True
-        self.itemIn = None
+
         self.inputOutput = {
             wheatBundle: flour,
             charcoal: woodAsh
@@ -1227,8 +1301,6 @@ class millstoneMachine(machine):
 
 
     def onTick(self):
-        # apply animations
-
         mouse = pygame.mouse.get_pressed()
         mousex,mousey = pygame.mouse.get_pos()
 
@@ -1294,6 +1366,20 @@ class millstoneMachine(machine):
     def prepareForSaving(self):
         self.itemIn = self.itemIn.name
 
+    def updateInfo(self):
+        global infoBG
+
+        self.infoImage = infoBG.copy()
+
+        if self.itemIn is not None:
+            writeOnCanvas(self.infoImage, "process: ", 14, 15, 60, fontType="comic")
+            drawOnCanvas(self.infoImage, self.itemIn.image, 15, 80, 0.5)
+            writeOnCanvas(self.infoImage, "->", 26, 55, 80, fontType="comic")
+            drawOnCanvas(self.infoImage, self.inputOutput[self.itemIn].image, 80, 80, 0.5)
+            writeOnCanvas(self.infoImage, "time left: " + timeToString(self.timeToComplete - self.holdTime+1), 14, 15, 120, fontType="comic")
+
+        writeOnCanvas(self.infoImage, "millstone", 30, 50, 15, "black")
+
     @classmethod
     def loadObject(cls, objectDict):
         newMachine = millstoneMachine(objectDict["x"], objectDict["y"])
@@ -1305,14 +1391,14 @@ class millstoneMachine(machine):
         newMachine.ticks = objectDict["ticks"]
         newMachine.completed = objectDict["completed"]
 
-
-    
-        
-
-
 class bowlMachine(machine):
     """Class for bowl."""
     def __init__(self, x, y):
+        self.itemsIn = []
+        self.inputOutput = {
+            (flour,waterBucket): dough,
+            (waterBucket, flour): dough
+        }
         super().__init__(x, y, bowlImage)
         self.holdStart = None
         self.holdTime = 0
@@ -1326,18 +1412,15 @@ class bowlMachine(machine):
         self.prBar = progressBar(barX,barY)
         self.prBar.hide()
         self.empty = True
-        self.itemsIn = []
-        self.inputOutput = {
-            (flour,waterBucket): dough,
-            (waterBucket, flour): dough
-        }
+
+
 
         self.ticks = 0
         self.possibleItemLocations = []
         self.animIndex = 0
         self.addedTimeThisFrame = False
         self.soundPlayed = False
-        self.maxItems = 20
+        self.maxItems = 3
         self.previousAddedTimeThisFrame = False
         self.endTimeSoundPLayed = time()
 
@@ -1364,6 +1447,9 @@ class bowlMachine(machine):
             self.empty = False
             self.itemsIn.append(selectedInvSlot.item)
             inventory.remove(selectedInvSlot.item)
+            self.updateInfo()
+            self.hideInfo()
+            self.showInfo()
             self.prBar.show()
             canPressAgain = False
             if self.holdStart is not None:
@@ -1464,6 +1550,22 @@ class bowlMachine(machine):
         self.holdTime/self.timeToComplete*len(progressBarSequence)
         ))
 
+    def updateInfo(self):
+        self.infoImage = infoBG.copy()
+
+        for i, item in enumerate(self.itemsIn):
+            drawOnCanvas(self.infoImage, item.image, i*45+15, 60, 0.6)
+        writeOnCanvas(self.infoImage, "ingridients: ", 14, 15, 40, fontType="comic")
+
+
+        try:
+            writeOnCanvas(self.infoImage, "produce: ", 14, 15, 100, fontType="comic")
+            drawOnCanvas(self.infoImage, self.inputOutput[tuple(self.itemsIn)].image, 95, 100, 0.6)
+        except KeyError:
+            pass
+
+        writeOnCanvas(self.infoImage, "bowl", 30, 60, 15)
+
     @classmethod
     def loadObject(cls, objectDict):
         newMachine = bowlMachine(objectDict["x"], objectDict["y"])
@@ -1484,14 +1586,14 @@ class bowlMachine(machine):
 class brickOvenMachine(machine):
     """Class for brick oven machine."""
     def __init__(self, x, y):
-        super().__init__(x, y, brickOvenImage)
+
         self.puttableItems = { 
             # all items that you're able to put in an oven. the negative value represents
             #  the item smelting and the positive the fuel.
             # It also represents how much fuel does a smeltable 
             # use or how much power the fuel can give.
             dough: -5,
-            wood: (-5,5),
+            wood: (-5,5.01),
             charcoal: 20,
         }
 
@@ -1502,9 +1604,10 @@ class brickOvenMachine(machine):
 
         self.fuelIn = None
         self.itemIn = None
+        self.fuelLeft = 0
+        super().__init__(x, y, brickOvenImage)
         self.producedItem = None
         self.soundEndTime = 0
-        self.fuelLeft = 0
         self.holdTime = 0
 
         self.animIndex = 0
@@ -1518,6 +1621,7 @@ class brickOvenMachine(machine):
             barY = 0
         self.prBar = progressBar(barX,barY)
         self.fuelBar = progressBar(barX, self.y+72)
+        self.fuelBar.setAnimationFrame(0)
         self.prBar.hide()
         self.fuelBar.hide()
         self.maxFuel = 0
@@ -1599,6 +1703,7 @@ class brickOvenMachine(machine):
             if self.holdTime > abs(self.maxItemPower):
                 self.animIndex = 0
                 self.currentSequence = brickOvenCookedSequence
+                self.prBar.image = finalProgressImage
                 if self.itemIn in self.produce:
                     self.producedItem = self.produce[self.itemIn]
                     self.itemIn = None  
@@ -1660,6 +1765,32 @@ class brickOvenMachine(machine):
             self.fuelBar.setAnimationFrame(int(
                 self.fuelLeft/self.maxFuel*len(progressBarSequence)
                 ))
+
+    def updateInfo(self):
+        self.infoImage = infoBG.copy()
+
+        writeOnCanvas(self.infoImage, "BRICK OVEN", 30, 40, 15)
+
+        if self.fuelIn is None:
+            writeOnCanvas(self.infoImage, "No fuel", 14, 25, 40, fontType="comic") #fuel
+        else:
+            drawOnCanvas(self.infoImage, self.fuelIn.image, 25, 40, 0.6) #fuel
+            writeOnCanvas(self.infoImage, "fuel", 14, 25, 80, fontType="comic")
+            
+        writeOnCanvas(self.infoImage, "+", 30, 85, 45, fontType="comic")
+
+        if self.itemIn is None:
+            writeOnCanvas(self.infoImage, "No item", 14, 110, 40, fontType="comic") # item
+        else:
+            drawOnCanvas(self.infoImage, self.itemIn.image, 110, 40, 0.6) # item
+            writeOnCanvas(self.infoImage, "item", 14, 110, 80, fontType="comic")
+
+        writeOnCanvas(self.infoImage, "|", 14, 90, 80, fontType="comic")
+        writeOnCanvas(self.infoImage, "\/", 14, 85, 90, fontType="comic")
+        try:
+            drawOnCanvas(self.infoImage, self.produce[self.itemIn].image, 70, 100, 0.6) # produce
+        except KeyError:
+            writeOnCanvas(self.infoImage, "???", 22, 75, 105, fontType="comic")
 
 
 class progressBar(entity):
@@ -1736,7 +1867,6 @@ class transition:
         self.originalImage = image
         self.entity = entity(self.startX, self.startY, image=image)
 
-
         self.entity.draw = self.entity.drawOnOverlay
         transitions.append(self)
 
@@ -1760,6 +1890,7 @@ class transition:
         self.entity.x, self.entity.y = rect.topleft
 
         if normalizedTime >= 1:
+            popSound.play()
             entities.remove(self.entity)
             transitions.remove(self)      
         
@@ -1767,7 +1898,7 @@ class popUp:
     def __init__(self, text, textSize, textColor, pos, duration=4.0, stayTime=0.5, floatSpeed=30.0):
         """Class for pop ups on the screen."""
 
-        self.image = renderBigText(text, textColor, textSize).convert_alpha()
+        self.image = renderText(text, textColor, textSize).convert_alpha()
         self.x, self.y = pos
 
         # centralize the pos
@@ -1819,6 +1950,23 @@ class popUp:
         if self in entities:
             entities.remove(self)
 
+class timer:
+    """Class for timers that execute wanted function on time end. List: timers."""
+    def __init__(self, time:float, action:Callable, start = time()):
+        self.time = time
+        self.start = start
+        self.action = action
+        timers.append(self)
+
+    def update(self):
+        if time() - self.start >= self.time:
+            self.action()
+            self.destroy()
+
+    def destroy(self):
+        timers.remove(self)
+        del self
+
 # lists
 entities:list[entity] = []
 colliders:list[obstacle] = []
@@ -1836,6 +1984,7 @@ existingItems:dict[str, item] = {}
 transitions:list[transition] = []
 popUps:list[popUp] = []
 musicThemes:list[musicTheme] = []
+timers:list[timer] = []
 
 # create slots
 for page in range(6):
@@ -1986,7 +2135,6 @@ def sellCheck():
     if not selectedSellableItem.sellable:
         return False
 
-    popSound.play()
     return True
 
 def buyCheck(amt=1):
@@ -2068,7 +2216,6 @@ def sellCustom():
             selectedSellableItem.select()
 
         actionOnInputEnd = None
-        popSound.play()
 
     actionOnInputEnd = sellCustomAmt
     inputValue = "-"
@@ -2302,136 +2449,237 @@ def setSlotIndexOnPage(index):
     selectedInvSlot = slots[((inventory.page-1)*SLOTS_PER_PAGE)+index-1]
     syncSellableSelectWithInvSelect()
 
+def handleInfoPopUps(mouseCoords):
+    """Handles info pop ups when hovered over a field or a machine."""
+    global hoverObject, hoverStart, objectShowingInfo, infoPopUpTimer
+
+    hoverField:field = findFieldByCoords(mouseCoords)
+
+    if hoverField is not None:
+        hoverField.showInfo() if not hoverField.infoVisibility else None    
+        return
+    
+    checkMouseCollisionsWithMethod(machines, mouseCoords, "showInfo")
+
+def createFarmland(mouseCoords):
+    """Creates farmland on the area, cursor is hovering over.
+    Returns true if the farmland was created, otherwise returns false."""
+    hoverArea = findAreaByCoords(mouseCoords)
+
+    if hoverArea.object is not None:
+        return False
+
+    # check if you have it selected/in inventory
+    if not farmland in inventory.items or selectedInvSlot != farmland.slot:
+        return False
+
+    # check boundaries
+    fieldx,fieldy = mouseCoords[0]//BLOCK_SIZE,mouseCoords[1]//BLOCK_SIZE
+    if not 0 <= fieldx <= 12 or not 0 <= fieldy <= 6:
+        return False
+
+    # if needed square is already ocupied by a machine return
+    for m in machines:
+        if m.x//BLOCK_SIZE == fieldx and m.y//BLOCK_SIZE == fieldy:
+            return False
+        
+
+    # create it
+    newField = field(fieldx,fieldy)
+
+    # lower the multiplier if the farmland was created near the brick oven
+    for m in machines:
+        if isinstance(m, brickOvenMachine) and measureBlockDistance(
+            newField.x,newField.y,m.x,m.y) <= 1:
+            newField.multiplier *= 0.5
+
+    inventory.remove(farmland)
+
+    return True
+
+def fertilizeField(neededField:field):
+    """Fertilizes or makes the given field wet"""
+
+    if selectedInvSlot == woodAsh.slot and not neededField.fertilized:
+        neededField.fertilize()
+        sprinkleSound.play()
+        inventory.remove(woodAsh)
+    elif selectedInvSlot == waterBucket.slot and not neededField.wet:
+        neededField.makeWet()
+        waterPourSound.play()
+        inventory.remove(waterBucket)
+
+def createMachine(mouseCoords):
+    """Creates a machine on a field that overlaps given mouseCoords."""
+    global canPressAgain
+
+    mousex,mousey = mouseCoords
+
+    if selectedInvSlot.item is None or selectedInvSlot.item.machineClass is None: 
+        return
+
+    if findFieldByCoords((mousex,mousey)) is not None:
+        return
+
+    if not 0 <= mousey//BLOCK_SIZE < 7 or not 0 <= mousex//BLOCK_SIZE <= 12:
+        return
+
+    if (int(mousex//BLOCK_SIZE*BLOCK_SIZE),int(mousey//BLOCK_SIZE*BLOCK_SIZE)) in [(ma.x,ma.y) for ma in machines]:
+        return
+
+    if not canPressAgain:
+        return
+
+    buildSound.play()
+    selectedInvSlot.item.machineClass(mousex//BLOCK_SIZE*BLOCK_SIZE,
+                                        mousey//BLOCK_SIZE*BLOCK_SIZE)
+    inventory.remove(selectedInvSlot.item)
+    canPressAgain = False
+
+def getSelectedSellableCount() -> int:
+    global selectedSellableItem
+
+    try:
+        inventory.items[selectedSellableItem.item]
+    except:
+        return 0
+
+    return inventory.items[selectedSellableItem.item]
+
+def checkMouseCollisionsWithMethod(lst:list[entity], mouseCoords:tuple[int,int], methodName:str, *args, **kwargs) -> None:
+    """Cycles through the list `lst` and checks every object's there collision with mouse cursor,
+    if collision is detected executes the `method` of an object."""
+
+    for element in lst:
+        if element.getRect().collidepoint(mouseCoords):
+            method = getattr(element, methodName)
+            return method(*args, **kwargs)
+
+def checkMouseCollisionsWithAction(lst:list[entity], mouseCoords:tuple[int,int], action:Callable, addSelf=False, *args, **kwargs) -> None:
+    """Cycles through the list `lst` and checks every object's there collision with mouse cursor,
+    if collision is detected executes the `action`."""
+
+    for element in lst:
+        if element.getRect().collidepoint(mouseCoords):
+            if addSelf:
+                return action(element, *args, *kwargs)
+
+            return action(*args, **kwargs)
+
+def leftClick(mousex,mousey):
+    """Covers all left click actions."""
+    global selectedInvSlot, canPressAgain
+
+    if 0 < mousex < WIDTH and 560 < mousey < HEIGHT:
+        # in inv panel
+        for s in slots:
+            if s.getRect().collidepoint((mousex,mousey)):
+                selectedInvSlot = s
+                return
+
+        if rightButtonEnt.getRect().collidepoint((mousex,mousey)) and canPressAgain:
+            inventory.changePage("right")
+            canPressAgain = False
+
+        if leftButtonEnt.getRect().collidepoint((mousex,mousey)) and canPressAgain:
+            inventory.changePage("left")                
+            canPressAgain = False
+
+    elif not sellPanelOpened:
+        # in screen
+        hoverField = findFieldByCoords((mousex,mousey))
+        if not 0 < mousex//BLOCK_SIZE < 12 and 0 < mousey//BLOCK_SIZE < 7:
+            if farmer.getRect().collidepoint(mousex,mousey) and canPressAgain:
+                showSellPanel()
+                return
+
+        if hoverField is None:
+            checkMouseCollisionsWithMethod(machines, (mousex,mousey), "onLeftClick")
+            return
+        
+        elif canPressAgain:
+            breakPlant(hoverField)            
+            return
+
+
+    else:
+        # in sell panel
+        checkMouseCollisionsWithMethod(sellPanelItems, (mousex,mousey), "select")
+
+        if not canPressAgain:
+            return
+
+        def handleSPButton(SPButton) -> None|sellPanelButton:
+            if SPButton.disabled:
+                addPopUpMessage(SPButton.disabledText)
+                return
+            return SPButton
+
+        buttonPressed = checkMouseCollisionsWithAction(sellPanelButtons, (mousex,mousey), handleSPButton, addSelf=True)
+        if buttonPressed is None:
+            return
+                
+        itemSlot = selectedSellableItem.item.slot
+        itemCount = getSelectedSellableCount()
+        buttonPressed.action()
+        canPressAgain = False
+        if buttonPressed.buttonType == "sell":
+            currentCount = getSelectedSellableCount()
+
+            for _ in range(min(20, (itemCount-currentCount))):
+                transition(
+                    int((itemSlot.x+BLOCK_SIZE*1.2)//BLOCK_SIZE),
+                    int((sellPanel.get_height() + BLOCK_SIZE)//BLOCK_SIZE),
+                    (selectedSellableItem.x+BLOCK_SIZE*1.5)//BLOCK_SIZE,
+                    (selectedSellableItem.y+BLOCK_SIZE*1.5)//BLOCK_SIZE,
+                    selectedSellableItem.image
+                )
 
 
 def mouseControl():
     """Covers everything that is activated with mouse."""
-    global canPressAgain,newFarmlandCreated,selectedInvSlot,justExited,actionOnInputEnd,objectShowingInfo
+    global canPressAgain,newFarmlandCreated,selectedInvSlot,actionOnInputEnd,objectShowingInfo
 
-    mouse = pygame.mouse.get_pressed()
+    mouse = pygame.mouse.get_pressed(5)
     mousex,mousey = pygame.mouse.get_pos()
 
-    hoverField:field = findFieldByCoords((mousex,mousey))
+    if not 0 < mousex < WIDTH or not 0 < mousey < HEIGHT:
+        return
+    
+    hoverField:field = findFieldByCoords((mousex, mousey))
+    handleInfoPopUps((mousex,mousey))
 
-    if hoverField is not None:
-        objectShowingInfo.hideInfo() if objectShowingInfo is not None and objectShowingInfo != hoverField else None
-        hoverField.showInfo()
+
+
+    if mouse[2]:
+        if not sellPanelOpened:
+            createFarmland((mousex,mousey)) # create farmland
+            if selectedInvSlot == wheatSeeds.slot and not mouse[0]: 
+                # plant a plant
+                placePlant(hoverField)
+                return
+            
+            if hoverField is not None:
+                # fertilize
+                fertilizeField(hoverField)
+
+            createMachine((mousex,mousey))
+
+            checkMouseCollisionsWithMethod(machines, (mousex,mousey), "onRightClick")
+
+    if mouse[4]:
+        handleInfoPopUps((mousex,mousey))
     elif objectShowingInfo is not None:
         objectShowingInfo.hideInfo()
 
-    if mouse[2] and 0 < mousex < WIDTH and 0 < mousey < HEIGHT:
-        if not sellPanelOpened:
-
-            if hoverField is None and farmland in inventory.items and selectedInvSlot == farmland.slot:
-                fieldx,fieldy = mousex//BLOCK_SIZE,mousey//BLOCK_SIZE
-                if 0 <= fieldx <= 12 and 0 <= fieldy <= 6:
-                    for m in machines:
-                        if m.x//BLOCK_SIZE == fieldx and m.y//BLOCK_SIZE == fieldy:
-                            return
-                    newField = field(fieldx,fieldy)
-                    for m in machines:
-                        if isinstance(m, brickOvenMachine) and measureBlockDistance(
-                            newField.x,newField.y,m.x,m.y) <= 1:
-                            newField.multiplier = 0.5
-    
-                    inventory.remove(farmland)
-                    newFarmlandCreated = True
-            elif not newFarmlandCreated:
-                if selectedInvSlot == wheatSeeds.slot and not mouse[0]:
-                    placePlant(hoverField)
-                    return
-                if hoverField is not None:
-                    if selectedInvSlot == woodAsh.slot and not hoverField.fertilized:
-                        hoverField.fertilize()
-                        sprinkleSound.play()
-                        inventory.remove(woodAsh)
-                    elif selectedInvSlot == waterBucket.slot and not hoverField.wet:
-                        hoverField.makeWet()
-                        waterPourSound.play()
-                        inventory.remove(waterBucket)
-                elif selectedInvSlot.item is not None and selectedInvSlot.item.machineClass is not None and hoverField is None and 0 <= mousey//BLOCK_SIZE < 7 and 0 <= mousex//BLOCK_SIZE <= 12 and canPressAgain:
-                    if not (int(mousex//BLOCK_SIZE*BLOCK_SIZE),int(mousey//BLOCK_SIZE*BLOCK_SIZE)) in [
-                        (ma.x,ma.y) for ma in machines]:
-                        buildSound.play()
-                        selectedInvSlot.item.machineClass(mousex//BLOCK_SIZE*BLOCK_SIZE,
-                                                          mousey//BLOCK_SIZE*BLOCK_SIZE)
-                        inventory.remove(selectedInvSlot.item)
-                        canPressAgain = False
-
-            for m in machines:
-                if m.getRect().collidepoint((mousex,mousey)):
-                    m.onRightClick()
-    if mouse[0] and 0 < mousex < WIDTH and 0 < mousey < HEIGHT:
-        if 0 < mousex < WIDTH and 560 < mousey < HEIGHT:
-            # in inv panel
-            for s in slots:
-                if s.getRect().collidepoint((mousex,mousey)):
-                    selectedInvSlot = s
-                    return
-
-            if rightButtonEnt.getRect().collidepoint((mousex,mousey)) and canPressAgain:
-                inventory.changePage("right")
-                canPressAgain = False
-
-            if leftButtonEnt.getRect().collidepoint((mousex,mousey)) and canPressAgain:
-                inventory.changePage("left")                
-                canPressAgain = False
-
-        if not sellPanelOpened:
-            # in screen
-            hoverField = findFieldByCoords((mousex,mousey))
-            if hoverField is None:
-                for m in machines:
-                    if m.getRect().collidepoint((mousex,mousey)):
-                        m.onLeftClick()
-                        break
-            if not justExited:
-                breakPlant(hoverField)            
-            if farmer.getRect().collidepoint(mousex,mousey) and canPressAgain:
-                showSellPanel()
-        else:
-            # in sell panel
-            for i in sellPanelItems:
-                i:sellPanelItem
-                if i.getRect().collidepoint(mousex,mousey):
-                    i.select()
-
-            if canPressAgain:
-                for SPButton in sellPanelButtons:
-                    if SPButton.getRect().collidepoint(mousex,mousey) and not SPButton.disabled:
-                        savedSlot = selectedSellableItem.item.slot
-                        if selectedSellableItem.item in inventory.items:
-                            savedCount = inventory.items[selectedSellableItem.item]
-                        SPButton.action()
-                        canPressAgain = False
-                        if SPButton.buttonType == "sell":
-                            try:
-                                inventory.items[selectedSellableItem.item]
-                            except:
-                                currentCount = 0
-                            else:
-                                currentCount = inventory.items[selectedSellableItem.item]
-                            for _ in range(min(20, (savedCount-currentCount))):
-                                transition(
-                                    int((savedSlot.x+BLOCK_SIZE*1.2)//BLOCK_SIZE), 
-                                    int((sellPanel.get_height() + BLOCK_SIZE)//BLOCK_SIZE),
-                                    (selectedSellableItem.x+BLOCK_SIZE*1.5)//BLOCK_SIZE,
-                                    (selectedSellableItem.y+BLOCK_SIZE*1.5)//BLOCK_SIZE,
-                                    selectedSellableItem.image
-                                )
-                        break
-                    elif SPButton.getRect().collidepoint(mousex,mousey) and SPButton.disabled:
-                        addPopUpMessage(SPButton.disabledText)
+    if mouse[0]: 
+        leftClick(mousex,mousey)
 
     elif not any(mouse):
         canPressAgain = True
         newFarmlandCreated = False
-        justExited = False
 
-    if any(mouse) and (not sellCustomButton.getRect().collidepoint((mousex,mousey)) or not buyCustomButton.getRect(
-    ).collidepoint((mousex,mousey))) and canPressAgain:
-        actionOnInputEnd = None
-        canPressAgain = False
+
 
 
 
@@ -2443,10 +2691,10 @@ def showSellPanel():
 
 def hideSellPanel():
     """Hides the 'sell and buy' panel."""
-    global sellPanelOpened,justExited
+    global sellPanelOpened,canPressAgain
 
     sellPanelOpened = False
-    justExited = True
+    canPressAgain = False
 
 backButton.action = hideSellPanel
 
@@ -2586,6 +2834,9 @@ def update():
 
     for p in popUps:
         p.update(dt)
+
+    for t in timers:
+        t.update()
 
     applyTransitions()
     handleMusic()

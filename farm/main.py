@@ -17,13 +17,13 @@ screen = pygame.display.set_mode((WIDTH,HEIGHT))
 invPanel = pygame.Surface((WIDTH, 160)) # 1280 X 160
 sellPanel = pygame.Surface((WIDTH,560)) # 1280 X 560
 transitionScreen = pygame.Surface((WIDTH,HEIGHT), flags=pygame.SRCALPHA) # 1280 X 720 overlay for transitions
+settingsScreen = pygame.Surface((WIDTH, HEIGHT)) # screen for settings
 
 # clock and title
 clock = pygame.time.Clock()
 pygame.display.set_caption("farm")
 
 # inventory
-INVENTORY_BG = (245,241,127)
 SLOTS_PER_PAGE = 5
 
 # TILE GRID
@@ -50,6 +50,7 @@ running = True
 updateFrame = True
 newFarmlandCreated = False
 sellPanelOpened = False
+settingsOpened = False
 
 # forest sounds
 forestSoundPlaying = None
@@ -69,6 +70,16 @@ inputValue = ""
 typingPosition = 780,100
 actionOnInputEnd = None
 
+# bg colors:
+SETTINGS_BG_COLOR = (69, 86, 122)
+INVENTORY_BG = (245,241,127)
+SLIDER_BODY_FILL = (74, 20, 140)
+SLIDER_DARK_FILL = (95, 95, 95)
+SLIDER_LIGHT_FILL = (230, 230, 230)
+
+# settings
+currentSetingsTab = "audio"
+
 # other
 selectedInvSlot = None
 infoPopUpTimer = None
@@ -86,6 +97,13 @@ sineWave = [0.0, 0.087, 0.174, 0.259, 0.342, 0.423, 0.5, 0.574, 0.643,
             0.819, 0.766, 0.707, 0.643, 0.574, 0.5, 0.423, 0.342,
             0.259, 0.174, 0.087, 0.0]
 
+
+def isBetween(val:int, min:int, max:int) -> bool:
+    """Double comparison."""
+    if min <= val <= max:
+        return True
+
+    return False
 
 def isJSONable(obj) -> bool:
     """Checks if the item is JSON serializable."""
@@ -142,11 +160,31 @@ def renderText(text:str,color:tuple[int], size:int = 30, fontType = "regular") -
     surf = usingFont.render(text, False, color)
 
     return surf
-        
-def writeOnCanvas(canvas:pygame.Surface, text:str, textSize: int, x:int|float, y:int|float, color:tuple[int]|str = "black",fontType:str = "regular") -> pygame.Surface:
+
+def drawImageOnColor(surface:pygame.Surface, image:pygame.Surface, targetColor:tuple[int], destPos:tuple[int, int] = (0,0)) -> None:
+    """Renders `image` onto `surface` drawing only at pixels that are the `targetColor`."""
+
+    colorMask = pygame.mask.from_threshold(surface, targetColor, threshold=(1,1,1,255))
+
+    stencil = colorMask.to_surface(setcolor = (255, 255, 255, 255), unsetcolor = (0, 0, 0, 0))
+
+    clippedImage = pygame.Surface(image.get_size(), flags = pygame.SRCALPHA)
+    clippedImage.blit(image, (0,0))
+
+    clippedImage.blit(stencil, (-destPos[0], -destPos[1]), special_flags = pygame.BLEND_RGBA_MULT)
+
+    surface.blit(clippedImage, destPos)
+
+def writeOnCanvas(canvas:pygame.Surface, text:str, textSize: int, x:int|float, y:int|float, color:tuple[int]|str = "black",fontType:str = "regular", centered:bool = False) -> pygame.Surface:
     """Renders text on a given canvas, then returns it."""
 
-    canvas.blit(renderText(text, color, textSize, fontType), (x,y))
+    textSurf = renderText(text, color, textSize, fontType)
+
+    if centered:
+        canvas.blit(textSurf, (x - textSurf.get_width()//2,y))
+    else:
+        canvas.blit(textSurf, (x,y))
+
     return canvas
 
 def drawOnCanvas(canvas:pygame.Surface, image:pygame.Surface, x:int|float, y:int|float, scale:float = 1) -> pygame.Surface:
@@ -254,54 +292,92 @@ def loadFromFolder(folderPath):
 
     return returnSequence
 
-mountain = loadImage("mountain.jpg")
-playerImage = loadImage("player.png")
-soilImage = loadImage("soil.png")
-wheatGrowth = loadFromFolder("wheat")
+# items
 wheatBundleImage = loadImage("wheat bundle.png")
 wheatSeedsImage = loadImage("wheat seeds.png")
-farmerImage = loadImage("jack.png")
-sell1ButtonImage = loadImage("sell1Button.png")
-sellCustomButtonImage = loadImage("sellCustom.png")
-sellAllButtonImage = loadImage("sellAllButton.png")
-highlightFrameImage = loadImage("highlightFrame.png")
-coinImage = loadImage("coin.png")
-backButtonImage = loadImage("backButton.png")
-sellableIndicatorImage = loadImage("sellIndicator.png")
-buyableIndicatorImage = loadImage("buyIndicator.png")
-buy1Image = loadImage("buy1.png")
-buyCustomImage = loadImage("buyCustom.png")
-buyMaxImage = loadImage("buyMax.png")
-woodAshImage = loadImage("woodAsh.png")
-progressBarSequence = loadFromFolder("progressBar")
 flourImage = loadImage("flour.png")
-waterBucketImage = loadImage("waterBucket.png")
-bowlImage = loadImage("bowl.png")
 doughImage = loadImage("dough.png")
+waterBucketImage = loadImage("waterBucket.png")
+woodAshImage = loadImage("woodAsh.png")
 breadImage = loadImage("bread.png")
 charcoalImage = loadImage("charcoal.png")
 woodImage = loadImage("wood.png")
+
+# buttons and UI
+
+    # sell
+sell1ButtonImage = loadImage("sell1Button.png")
+sellCustomButtonImage = loadImage("sellCustom.png")
+sellAllButtonImage = loadImage("sellAllButton.png")
+
+    # buy
+
+buy1Image = loadImage("buy1.png")
+buyCustomImage = loadImage("buyCustom.png")
+buyMaxImage = loadImage("buyMax.png")
+
+    # inv and sell panel
+highlightFrameImage = loadImage("highlightFrame.png")
+coinImage = loadImage("coin.png")
+sellableIndicatorImage = loadImage("sellIndicator.png")
+buyableIndicatorImage = loadImage("buyIndicator.png")
+backButtonImage = loadImage("backButton.png")
+rightButton = loadImage("rightButton.png")
+leftButton = loadImage("leftButton.png")
+
+    # other
+settingsButtonImage = loadImage("settingsButton.png")
+finalProgressImage = loadImage("finalProgress.png")
+progressBarSequence = loadFromFolder("progressBar")
+
+
+# machines and static objects
+
+    # soil
+soilImage = loadImage("soil.png")
 fertilizedSoilImage = loadImage("fertilizedSoil.png")
 wetSoilImage = loadImage("wetSoil.png")
 fertilizedWetSoilImage = loadImage("fertilizedWetSoil.png")
-rightButton = loadImage("rightButton.png")
-leftButton = loadImage("leftButton.png")
+
+    # bowl
+bowlImage = loadImage("bowl.png")
+bowlBack = loadImage("bowlBack.png")
+bowlFront = loadImage("bowlFront.png")
+bowlStickSequence = loadFromFolder("bowlStick")
+
+
+
+    # millstone
 millstoneImage = loadImage("millstoneFull.png")
 topMillstoneSequence = loadFromFolder("topMillstoneSpin")
 topMillstoneImage = loadImage("topMillstone.png")
 bottomMillstoneImage = loadImage("bottomMillstone.png")
+
+    # brick oven
 brickOvenImage = loadImage("brickOven.png")
 brickOvenBars = loadImage("brickOvenBars.png")
 brickOvenCookingSequence = loadFromFolder("brickOvenCooking")
 brickOvenCookedSequence = loadFromFolder("brickOvenCooked")
-bowlBack = loadImage("bowlBack.png")
-bowlFront = loadImage("bowlFront.png")
-bowlStickSequence = loadFromFolder("bowlStick")
+
+
+# backgrounds
 sellPanelBG = pygame.transform.scale_by(loadImage("sellPanelBG.png"),2)
 tileVariants = loadFromFolder("tileVariants")
-shadowImage = loadImage("shadow.png")
 infoBG = loadImage("infoBG.png")
-finalProgressImage = loadImage("finalProgress.png")
+
+# settings sprites
+sliderBodyImage = loadImage("sliderBody.png")
+sliderHeadImage = loadImage("sliderHead.png")
+sliderFrameImage = loadImage("sliderFrame.png")
+settingsTabBG = loadImage("settingsTabBG.png")
+
+
+# other
+shadowImage = loadImage("shadow.png")
+wheatGrowth = loadFromFolder("wheat")
+farmerImage = loadImage("jack.png")
+
+
 
 INFO_BG_WIDTH, INFO_BG_HEIGHT = infoBG.get_size()
 
@@ -532,6 +608,35 @@ def writeSPBMessages(buttonType, msg):
         for spb in sellPanelButtons:
             if spb.buttonType == buttonType:
                 spb.disabledText = msg
+
+def showSettings():
+    """Shows settings."""
+    global settingsOpened
+
+    settingsOpened = True
+
+def hideSettings():
+    """Hides settings."""
+    global settingsOpened
+
+    settingsOpened = False
+
+def showSellPanel():
+    """Shows the 'sell and buy' panel."""
+    global sellPanelOpened, selectedSellableItem
+
+    if selectedSellableItem is not None:
+        selectedSellableItem.select()
+
+    sellPanelOpened = True
+
+def hideSellPanel():
+    """Hides the 'sell and buy' panel."""
+    global sellPanelOpened,canPressAgain
+
+    sellPanelOpened = False
+    canPressAgain = False
+
 
 def controlSPBDimming():
     enableButtonType(False, "all")
@@ -1202,8 +1307,6 @@ class sellPanelButton(sellPanelObject):
 
         self.disabled = False
         self.image = self.enabledImage
-
-
 
 class machine(entity):
     """Class for machines like millstone. List: machines"""
@@ -1967,6 +2070,128 @@ class timer:
         timers.remove(self)
         del self
 
+class settingsObject(entity):
+    """Entities in settings. List: settingsObjects"""
+    def __init__(self, x, y, layer=0, width=0, height=0, image=None):
+        super().__init__(x, y, layer, width, height, image)
+        settingsObjects.append(self)
+        entities.remove(self)
+
+    def draw(self, surf=settingsScreen):
+        return super().draw(surf)
+
+class slider(settingsObject):
+    """Class for sliders (used for ex. volume control). List: sliders"""
+    def __init__(self, x, y, tab, minValue = 0, maxValue = 100, layer=0, width=0, height=0):
+        super().__init__(x, y, layer, width, height, sliderBodyImage.copy())
+        self.minValue = minValue
+        maxValue = maxValue + 1
+        self.tab = tab
+        self.active = currentSetingsTab == tab
+        self.maxValue = maxValue
+        self.value = int((minValue + maxValue) / 2)
+        self.widthPerValue = self.width / self.maxValue
+        self.updateColors()
+
+        sliders.append(self)
+
+    def getValue(self) -> int:
+        return self.value
+
+    def setValue(self, mouseCoords) -> int:
+
+        self.updateSides()
+        mousex, mousey = mouseCoords
+
+        if not isBetween(mousex, self.left, self.right) or not isBetween(mousey, self.top, self.bottom):
+            return
+
+        relativeX = mousex - self.x
+
+        self.value = relativeX // self.widthPerValue
+        self.updateColors()
+
+        return self.value
+
+    def valueToX(self) -> int:
+        self.updateSides()
+        return self.left + self.widthPerValue * self.value
+
+    def draw(self, surf=settingsScreen):
+        surf.blit(sliderFrameImage, (self.x - 20, self.y - 20))
+        surf.blit(self.image, (self.x,self.y))
+        surf.blit(sliderHeadImage, (self.valueToX() - sliderHeadImage.get_width()//2, self.y - 10))
+
+    def updateColors(self):
+        """Updates background of a slider."""
+
+        self.updateSides()
+        self.image = sliderBodyImage.copy()
+
+        darkRect = pygame.Surface((self.valueToX() - self.x, sliderBodyImage.get_height()))
+        lightRect = pygame.Surface((abs(self.right - self.valueToX()), sliderBodyImage.get_height()))
+        darkRect.fill(SLIDER_DARK_FILL)
+        lightRect.fill(SLIDER_LIGHT_FILL)
+        drawImageOnColor(self.image, lightRect, SLIDER_BODY_FILL, (self.valueToX() - self.x, 0))
+        drawImageOnColor(self.image, darkRect, SLIDER_BODY_FILL)
+
+    def apply(self, variable: int) -> int:
+        """Applies the value of the slider to the `variable` and returns it."""
+        if not self.active:
+            return
+
+        variable = self.value
+
+        return variable
+
+class volumeSlider(slider):
+    """Volume sliders."""
+    def __init__(self, x, y, sound:soundEffect|tuple[soundEffect], title:str, layer=0, width=0, height=0):
+        super().__init__(x, y, "volume", 0, 100, layer, width, height)
+        self.sound = sound
+        self.title = title
+
+    def draw(self, surf=settingsScreen):
+        surf.blit(sliderFrameImage, (self.x - 20, self.y - 20))
+        surf.blit(self.image, (self.x,self.y))
+        writeOnCanvas(self.image, self.title, 20, self.image.get_width()//2, 8, centered=True, fontType="comic")
+        surf.blit(sliderHeadImage, (self.valueToX() - sliderHeadImage.get_width()//2, self.y - 10))
+
+    def apply(self):
+        if not self.active:
+            return
+
+        if isinstance(self.sound, soundEffect):
+            self.sound.setVolume(self.value / 100)
+            return
+
+        for sfx in self.sound:
+            sfx.setVolume(self.value / 100)
+        
+
+class settingsButton(settingsObject):
+    """Class for buttons in the settings. List: settingsButtons."""
+    def __init__(self, x, y, layer=0, width=0, height=0, image=None):
+        super().__init__(x, y, layer, width, height, image)
+
+    def action(self) -> None:
+        pass
+
+class settingsTabSwitcher(settingsButton):
+    """Class for tab switch buttons."""
+    def __init__(self, x, y, tab:str, title:str = None, layer=0, width=0, height=0, image=None):
+        super().__init__(x, y, layer, width, height, settingsTabBG)
+        self.tab = tab
+        self.title = tab.capitalize() if title is None else title
+        writeOnCanvas(self.image, self.title, 35, self.image.get_width() // 2, 7, centered=True, fontType="comic")
+
+    def action(self):
+        global currentSetingsTab
+
+        currentSetingsTab = self.tab
+        for s in sliders:
+            s.active = s.tab == self.tab
+
 # lists
 entities:list[entity] = []
 colliders:list[obstacle] = []
@@ -1985,6 +2210,9 @@ transitions:list[transition] = []
 popUps:list[popUp] = []
 musicThemes:list[musicTheme] = []
 timers:list[timer] = []
+settingsObjects:list[settingsObject] = []
+sliders:list[slider] = []
+settingsButtons:list[settingsButton] = []
 
 # create slots
 for page in range(6):
@@ -1997,14 +2225,12 @@ wheatSeeds = item(
     description="""Small, golden grains ready to be planted into soil
 to grow wheat.""",
 )
-
 wheatBundle = item(
     wheatBundleImage,
     "wheat bundle",
     description="""Treat every seed with care and it will reward you with this.
 A bundle of harvested wheat, ready to be processed.""",
 )
-
 farmland = item(
     soilImage,
     "farmland",
@@ -2012,14 +2238,12 @@ farmland = item(
 and she'll take care of your family for generations.
 Tilled, rich, beautiful soil prepared for planting.""",
 )
-
 woodAsh = item(
     woodAshImage,
     "wood ash",
     description="""The powder left behind after burning wood, useful as
 fertilizer. With it, wheat grows 2 times faster than usual.""",
 )
-
 millstone = item(
     millstoneImage,
     "millstone",
@@ -2029,7 +2253,6 @@ Flour might come out with a slight taste of sweat in it,
 but don't worry - it's only the first few times.""",
     machineClass=millstoneMachine,
 )
-
 flour = item(
     flourImage,
     "flour",
@@ -2037,7 +2260,6 @@ flour = item(
 magical white dust.
 A fundamental ingredient used to make dough and bread.""",
 )
-
 waterBucket = item(
     waterBucketImage,
     "bucket of water",
@@ -2046,7 +2268,6 @@ river, essential for life.
 You can see your reflection in it more clearly than in a
 mirror! Use it on the field and wheat there will grow 1.4 times faster!""",
 )
-
 bowl = item(
     bowlImage,
     "bowl",
@@ -2054,14 +2275,12 @@ bowl = item(
 ingridients. Mix flour and water in it, to form dough.""",
     machineClass=bowlMachine,
 )
-
 dough = item(
     doughImage,
     "dough",
     description="""Warm beneath your hands. You can feel the life in it as
 you knead, which is waiting for the heat of the oven.""",
 )
-
 brickOven = item(
     brickOvenImage,
     "brick oven",
@@ -2070,7 +2289,6 @@ for baking bread. A very powerful machine, just sometimes needs a lot of fuel.
 When placed near farmland, it defertilizes the soil, doubling wheat growth time.""",
     machineClass=brickOvenMachine,
 )
-
 bread = item(
     breadImage,
     "bread",
@@ -2079,14 +2297,12 @@ was like to taste that for the first time.
 A freshly baked, golden-brown loaf of bread offering
 nutritious sustenance.""",
 )
-
 wood = item(
     woodImage,
     "wood",
     description="""Logs, harvested staright from a forest. Can be made into
 charcoal using the oven.""",
 )
-
 charcoal = item(
     charcoalImage,
     "charcoal",
@@ -2101,6 +2317,7 @@ for gy in range(GRID_HEIGHT):
         area(gx,gy)
 
 farmer = entity(1200,360,image=farmerImage)
+settingsButtonUI = entity(1200, 0, image=settingsButtonImage)
 rightButtonEnt = entity(990,50,image=rightButton)
 leftButtonEnt = entity(30,50,image=leftButton)
 
@@ -2124,6 +2341,8 @@ sellPanelItem(460,180, "brick oven", brickOven, image=brickOvenImage, buyable=Tr
 sellPanelItem(60, 280, "bread", bread, sellable=True, buyable=False, image=breadImage) 
 sellPanelItem(160, 280, "wood", wood, buyable=True, sellable=False, image=woodImage)
 sellPanelObject(0,0,-1,image=sellPanelBG)
+
+
 
 def sellCheck():
     if selectedSellableItem is None:
@@ -2165,8 +2384,6 @@ def buy1():
     inventory.add(selectedSellableItem.item,1, gridCoords = (selectedSellableItem.x//BLOCK_SIZE, selectedSellableItem.y//BLOCK_SIZE))
     selectedSellableItem.select()
 
-
-
 def sellAll():
     if not sellCheck():
         return
@@ -2177,7 +2394,6 @@ def sellAll():
     inventory.items[selectedSellableItem.item] = 0
     inventory.popFromItems(selectedSellableItem.item)
     selectedSellableItem.select()
-
 
 def buyMax():
     if selectedSellableItem.name not in BUY_PANEL_PRICE_LIST:
@@ -2191,7 +2407,6 @@ def buyMax():
     inventory.coins -= BUY_PANEL_PRICE_LIST[selectedSellableItem.name]*maxAmount
     inventory.add(selectedSellableItem.item,maxAmount, gridCoords = (selectedSellableItem.x//BLOCK_SIZE, selectedSellableItem.y//BLOCK_SIZE))
     selectedSellableItem.select()
-
 
 def sellCustom():
     global actionOnInputEnd,inputValue
@@ -2220,7 +2435,6 @@ def sellCustom():
     actionOnInputEnd = sellCustomAmt
     inputValue = "-"
     selectedSellableItem.select()
-
 
 def buyCustom():
     global actionOnInputEnd,inputValue
@@ -2260,6 +2474,7 @@ musicTheme("Jumping on rocks", getMusicPath("jumping on rocks.mp3"))
 
 # sound effects:
 forestSounds = soundEffect(getSoundEffectPath("forestSounds"), "forestSounds")
+forestSounds.setVolume(0.1)
 popSound =  soundEffect(getSoundEffectPath("pop"), "pop")
 seedPlantSound = soundEffect(getSoundEffectPath("seedPlant"), "seedPlant")
 wheatHarvestSound = soundEffect(getSoundEffectPath("wheatHarvest"), "wheatHarvest")
@@ -2280,6 +2495,7 @@ buy1Button = sellPanelButton(60,560-96, "buy",image=buy1Image)
 buyCustomButton = sellPanelButton(224,560-96, "buy",image=buyCustomImage)
 buyMaxButton = sellPanelButton(388, 560-96, "buy",image=buyMaxImage)
 backButton = sellPanelButton(0,0, "special", image=backButtonImage)
+backButton.action = hideSellPanel
 sell1Button.action = sell1
 sellAllButton.action = sellAll
 sellCustomButton.action = sellCustom
@@ -2289,6 +2505,8 @@ buyMaxButton.action = buyMax
 
 descriptionPanel = (635,560)
 descriptionTitle = sellPanelObject(317+descriptionPanel[0],60)
+
+# create line objects for rendering item descriptions in sell panel
 descriptionLines = [
 sellPanelObject(30+descriptionPanel[0],130),
 sellPanelObject(30+descriptionPanel[0], 130+FONT_HEIGHT),
@@ -2296,7 +2514,6 @@ sellPanelObject(30+descriptionPanel[0], 130+FONT_HEIGHT*2),
 sellPanelObject(30+descriptionPanel[0], 130+FONT_HEIGHT*3),
 sellPanelObject(30+descriptionPanel[0], 130+FONT_HEIGHT*4),
 ]
-
 descriptionPriceLines = [
 sellPanelObject(30+descriptionPanel[0], 300),
 sellPanelObject(30+descriptionPanel[0], 300+FONT_HEIGHT),
@@ -2308,6 +2525,8 @@ sellAllLine = sellPanelObject(30+descriptionPanel[0], 300+FONT_HEIGHT*5)
 buyCustomLine = sellPanelObject(912,300)
 
 highlightFrame = sellPanelObject(-950,-950,layer=-1,image=highlightFrameImage)
+
+# price lists
 SELL_PANEL_PRICE_LIST = {
     "millstone": 75,
     "flour": 15,
@@ -2329,9 +2548,31 @@ BUY_PANEL_PRICE_LIST = {
     "wood": 15
 }
 
+# settings objects
+settingsBackButton = settingsButton(0,0, image=backButtonImage)
+settingsBackButton.action = hideSettings
+volumeSlider(100, 100, forestSounds, "forest sounds")
+volumeSlider(100, 200, (millstoneGrindSound, fireCracklesSound, mixingSound), "machine sounds")
+volumeSlider(100, 300, (wheatHarvestSound, seedPlantSound), "farmland sounds")
+volumeSlider(100, 400, (waterPourSound, sprinkleSound), "fertilization sounds")
+volumeSlider(100, 500, (buySound, popSound), "shop sounds")
+volumeSlider(400, 200, buildSound, "build sound")
+volumeSlider(400, 100, boomSound, "alert sound")
+
+settingsTabSwitcher(100, 0, "volume")
+
+
+slidersWithVars:dict[slider: int] = {
+    
+}
+
+
+
+
+
 # tuple of keys here means key combination
 KEY_BINDS = {
-    pygame.K_ESCAPE: lambda: globals().__setitem__("sellPanelOpened",False),
+    pygame.K_ESCAPE: lambda: (hideSellPanel(), hideSettings()),
     pygame.K_RIGHT: lambda: inventory.changePage("right"),
     pygame.K_LEFT: lambda: inventory.changePage("left"),
     (pygame.K_r, pygame.K_LCTRL, pygame.K_LALT): resetSavedGameContext,
@@ -2570,7 +2811,7 @@ def leftClick(mousex,mousey):
     """Covers all left click actions."""
     global selectedInvSlot, canPressAgain
 
-    if 0 < mousex < WIDTH and 560 < mousey < HEIGHT:
+    if 0 < mousex < WIDTH and 560 < mousey < HEIGHT and not settingsOpened:
         # in inv panel
         for s in slots:
             if s.getRect().collidepoint((mousex,mousey)):
@@ -2585,8 +2826,12 @@ def leftClick(mousex,mousey):
             inventory.changePage("left")                
             canPressAgain = False
 
-    elif not sellPanelOpened:
+    elif not sellPanelOpened and not settingsOpened:
         # in screen
+
+        if settingsButtonUI.getRect().collidepoint((mousex, mousey)):
+            showSettings()
+
         hoverField = findFieldByCoords((mousex,mousey))
         if not 0 < mousex//BLOCK_SIZE < 12 and 0 < mousey//BLOCK_SIZE < 7:
             if farmer.getRect().collidepoint(mousex,mousey) and canPressAgain:
@@ -2602,7 +2847,7 @@ def leftClick(mousex,mousey):
             return
 
 
-    else:
+    elif not settingsOpened:
         # in sell panel
         checkMouseCollisionsWithMethod(sellPanelItems, (mousex,mousey), "select")
 
@@ -2634,6 +2879,18 @@ def leftClick(mousex,mousey):
                     (selectedSellableItem.y+BLOCK_SIZE*1.5)//BLOCK_SIZE,
                     selectedSellableItem.image
                 )
+    elif settingsOpened:
+        # in settings
+
+        checkMouseCollisionsWithMethod(sliders, (mousex,mousey), "setValue", *[(mousex, mousey)])
+        for s in sliders:
+            if isinstance(s, volumeSlider):
+                s.apply()
+            else:
+                s.apply()
+        
+
+
 
 
 def mouseControl():
@@ -2652,7 +2909,7 @@ def mouseControl():
 
 
     if mouse[2]:
-        if not sellPanelOpened:
+        if not sellPanelOpened and not settingsOpened:
             createFarmland((mousex,mousey)) # create farmland
             if selectedInvSlot == wheatSeeds.slot and not mouse[0]: 
                 # plant a plant
@@ -2678,25 +2935,6 @@ def mouseControl():
     elif not any(mouse):
         canPressAgain = True
         newFarmlandCreated = False
-
-
-
-
-
-def showSellPanel():
-    """Shows the 'sell and buy' panel."""
-    global sellPanelOpened
-
-    sellPanelOpened = True
-
-def hideSellPanel():
-    """Hides the 'sell and buy' panel."""
-    global sellPanelOpened,canPressAgain
-
-    sellPanelOpened = False
-    canPressAgain = False
-
-backButton.action = hideSellPanel
 
 def control():
     """Covers the control of the game."""
@@ -2797,13 +3035,21 @@ def render():
     inventory.draw()
     screen.blit(invPanel,(0,HEIGHT-invPanel.get_height()))
 
-    sellPanelObjects.sort(key=lambda x: x.layer)
     if sellPanelOpened:
+        sellPanelObjects.sort(key=lambda x: x.layer)
         sellPanel.fill((190,90,45))
         for s in sellPanelObjects:
             s.draw()
 
         screen.blit(sellPanel,(0,0))
+
+    if settingsOpened:
+        settingsObjects.sort(key=lambda x: x.layer)
+        settingsScreen.fill(SETTINGS_BG_COLOR)
+        for so in settingsObjects:
+            so.draw()
+
+        screen.blit(settingsScreen, (0,0))
 
     screen.blit(transitionScreen, (0,0))
 
